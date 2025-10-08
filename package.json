@@ -1,0 +1,8 @@
+{
+  "name": "@cogniflow/root",
+  "private": true,
+  "workspaces": [
+    "web",
+    "worker"
+  ]
+}

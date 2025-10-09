@@ -39,6 +39,8 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `GET /api/healthz` – verifies database connectivity
 - `GET /api/transfers?address=0x...&chain=eth&direction=all&limit=50&cursor=...` – paginated transfers for a wallet
 - `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days
+- `POST /tool/sql` – deterministic named SQL tooling for the chat agent (see `/tool/sql` GET for the allowlisted names)
+- `POST /api/chat` – placeholder chat orchestrator stub that will call the deterministic tools
 
 ## Frontend
 

@@ -32,7 +32,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `npx prisma migrate dev` to create tables (Supabase/Postgres URL required)
 - `npx prisma generate` whenever the schema changes
 - `npm run dev -w web` to launch the Next.js app at http://localhost:3000
-- `npm run start -w worker` to boot the indexer (currently logs a stub message)
+- `npm run start -w worker` to ingest ERC-20 transfers for tracked wallets
 
 ## API Routes (so far)
 
@@ -43,6 +43,12 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 ## Frontend
 
 - Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
+
+## Indexer Notes
+
+- Requires `ETH_RPC_URL` (or `ALCHEMY_HTTP_URL`) to be set to an Ethereum JSON-RPC endpoint (Sepolia or mainnet).
+- The worker queries `wallets` by `chain` (default `eth`). Add rows via Prisma/SQL or future auth flows to start ingestion.
+- `ETH_LOOKBACK_BLOCKS` controls the initial sync window when no cursor exists; defaults to 5000.
 
 ## Contributing
 

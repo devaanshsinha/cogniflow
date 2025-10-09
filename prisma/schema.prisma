@@ -82,6 +82,8 @@ model Wallet {
   userId    String   @map("user_id") @db.Uuid
   chain     String
   address   String
+  lastSyncedBlock Int?      @map("last_synced_block")
+  lastSyncedAt    DateTime? @map("last_synced_at")
   createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

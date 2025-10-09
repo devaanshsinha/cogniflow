@@ -1,3 +1,8 @@
+create schema if not exists extensions;
+create extension if not exists vector with schema extensions;
+
+set search_path = public, extensions;
+
 -- CreateTable
 CREATE TABLE "blocks" (
     "number" INTEGER NOT NULL,

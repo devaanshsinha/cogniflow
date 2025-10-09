@@ -8,6 +8,10 @@ type PortfolioResponse = {
     address: string;
     chain: string;
     windowDays: number;
+    sync: {
+      lastSyncedBlock: number | null;
+      lastSyncedAt: string | null;
+    } | null;
     totals: {
       transfers: number;
       incomingTransfers: number;
@@ -41,6 +45,10 @@ type TransfersResponse = {
   }>;
   nextCursor: string | null;
   hasMore: boolean;
+  sync: {
+    lastSyncedBlock: number | null;
+    lastSyncedAt: string | null;
+  } | null;
 };
 
 type FetchState = {
@@ -128,6 +136,20 @@ export function Dashboard(): JSX.Element {
   }, [address, refreshData]);
 
   const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
+  const sync = portfolio?.sync ?? null;
+  const syncDisplay = useMemo(() => {
+    if (!sync) {
+      return { blockLabel: "—", timeLabel: "Waiting for first sync…" };
+    }
+    const blockLabel =
+      typeof sync.lastSyncedBlock === "number"
+        ? `#${sync.lastSyncedBlock}`
+        : "—";
+    const timeLabel = sync.lastSyncedAt
+      ? `Updated ${new Date(sync.lastSyncedAt).toLocaleString()}`
+      : "Sync pending";
+    return { blockLabel, timeLabel };
+  }, [sync]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 py-10">
@@ -168,6 +190,9 @@ export function Dashboard(): JSX.Element {
         <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
           Overview ({portfolio?.chain ?? "eth"})
         </h2>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+          Sync status: block {syncDisplay.blockLabel} · {syncDisplay.timeLabel}
+        </p>
         {portfolioState.loading ? (
           <p className="mt-3 text-sm text-neutral-500">Loading portfolio…</p>
         ) : portfolioState.error ? (

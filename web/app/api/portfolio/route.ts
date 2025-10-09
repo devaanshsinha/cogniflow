@@ -39,7 +39,14 @@ export async function GET(request: Request) {
   const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
   try {
-    const [incomingGroups, outgoingGroups, incomingCount, outgoingCount, counterpartiesResult] =
+    const [
+      incomingGroups,
+      outgoingGroups,
+      incomingCount,
+      outgoingCount,
+      counterpartiesResult,
+      wallet,
+    ] =
       await Promise.all([
         prisma.transfer.groupBy({
           by: ["token", "symbol", "decimals"],
@@ -85,6 +92,13 @@ export async function GET(request: Request) {
             FROM "transfers"
             WHERE "chain" = ${chain} AND "timestamp" >= ${windowStart} AND "from_addr" = ${normalizedAddress}
           ) AS counterparties`,
+        prisma.wallet.findFirst({
+          where: { chain, address: normalizedAddress },
+          select: {
+            lastSyncedBlock: true,
+            lastSyncedAt: true,
+          },
+        }),
       ]);
 
     const holdingsMap = new Map<
@@ -155,6 +169,14 @@ export async function GET(request: Request) {
           counterparties: counterpartiesCount,
         },
         holdings,
+        sync: wallet
+          ? {
+              lastSyncedBlock: wallet.lastSyncedBlock ?? null,
+              lastSyncedAt: wallet.lastSyncedAt
+                ? wallet.lastSyncedAt.toISOString()
+                : null,
+            }
+          : null,
       },
     });
   } catch (error) {

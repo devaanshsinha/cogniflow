@@ -51,28 +51,37 @@ export async function GET(request: Request) {
   const where = buildWhereClause(address, direction, chain);
 
   try {
-    const items = await prisma.transfer.findMany({
-      where,
-      orderBy: [{ timestamp: "desc" }, { logIndex: "desc" }],
-      take: limit + 1,
-      cursor: cursor ? { id: cursor } : undefined,
-      skip: cursor ? 1 : 0,
-      select: {
-        id: true,
-        timestamp: true,
-        txHash: true,
-        logIndex: true,
-        token: true,
-        fromAddr: true,
-        toAddr: true,
-        amountRaw: true,
-        amountDec: true,
-        symbol: true,
-        decimals: true,
-        chain: true,
-        stale: true,
-      },
-    });
+    const [items, wallet] = await Promise.all([
+      prisma.transfer.findMany({
+        where,
+        orderBy: [{ timestamp: "desc" }, { logIndex: "desc" }],
+        take: limit + 1,
+        cursor: cursor ? { id: cursor } : undefined,
+        skip: cursor ? 1 : 0,
+        select: {
+          id: true,
+          timestamp: true,
+          txHash: true,
+          logIndex: true,
+          token: true,
+          fromAddr: true,
+          toAddr: true,
+          amountRaw: true,
+          amountDec: true,
+          symbol: true,
+          decimals: true,
+          chain: true,
+          stale: true,
+        },
+      }),
+      prisma.wallet.findFirst({
+        where: { chain, address: address.toLowerCase() },
+        select: {
+          lastSyncedBlock: true,
+          lastSyncedAt: true,
+        },
+      }),
+    ]);
 
     const hasMore = items.length > limit;
     const data = items.slice(0, limit).map((row) => ({
@@ -97,6 +106,14 @@ export async function GET(request: Request) {
       data,
       nextCursor,
       hasMore,
+      sync: wallet
+        ? {
+            lastSyncedBlock: wallet.lastSyncedBlock ?? null,
+            lastSyncedAt: wallet.lastSyncedAt
+              ? wallet.lastSyncedAt.toISOString()
+              : null,
+          }
+        : null,
     });
   } catch (error) {
     console.error("transfers endpoint failed", error);

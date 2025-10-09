@@ -53,6 +53,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `ETH_LOOKBACK_BLOCKS` controls the initial sync window when no cursor exists; defaults to 5000.
 - `RPC_MAX_RETRIES`, `RPC_RETRY_BASE_MS`, and `RPC_RETRY_MAX_MS` tune the exponential backoff for RPC calls (defaults: 5 attempts, 300ms base delay, 4.5s cap).
 - `NEXT_PUBLIC_ETHERSCAN_BASE_URL` configures the explorer links in the dashboard (defaults to mainnet `https://etherscan.io`; set to `https://sepolia.etherscan.io` for Sepolia).
+- Hourly price enrichment: run `npm run start:prices -w worker` (or schedule it) to fetch USD prices from CoinGecko and populate the `prices` table for the tokens seen on the chain.
 
 ## Contributing
 

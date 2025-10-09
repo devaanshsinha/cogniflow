@@ -30,6 +30,11 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `npm run dev -w web` to launch the Next.js app at http://localhost:3000
 - `npm run start -w worker` to boot the indexer (currently logs a stub message)
 
+## API Routes (so far)
+- `GET /api/healthz` – verifies database connectivity
+- `GET /api/transfers?address=0x...&chain=eth&direction=all&limit=50&cursor=...` – paginated transfers for a wallet
+- `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days
+
 ## Development Milestones
 - ✅ Day 1: Monorepo scaffolding, Next.js app, worker boot sequence
 - ⏳ Day 2–3: Prisma schema, Supabase wiring, portfolio and transfers APIs

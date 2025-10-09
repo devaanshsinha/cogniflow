@@ -12,6 +12,11 @@ type PortfolioResponse = {
       lastSyncedBlock: number | null;
       lastSyncedAt: string | null;
     } | null;
+    valuations: {
+      incomingUsd: string;
+      outgoingUsd: string;
+      netUsd: string;
+    };
     totals: {
       transfers: number;
       incomingTransfers: number;
@@ -25,6 +30,11 @@ type PortfolioResponse = {
       incoming: string;
       outgoing: string;
       net: string;
+      priceUsd: string | null;
+      priceTimestamp: string | null;
+      incomingUsd: string | null;
+      outgoingUsd: string | null;
+      netUsd: string | null;
     }>;
   };
 };
@@ -59,6 +69,24 @@ type FetchState = {
 const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
 const EXPLORER_BASE_URL =
   process.env.NEXT_PUBLIC_ETHERSCAN_BASE_URL ?? "https://etherscan.io";
+
+function formatNumber(value: number | string, maximumFractionDigits = 2) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(numeric)) return "—";
+  return numeric.toLocaleString(undefined, {
+    maximumFractionDigits,
+  });
+}
+
+function formatUsd(value: string | null) {
+  if (!value) return "—";
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return "—";
+  return `$${numeric.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 export function Dashboard(): JSX.Element {
   const [address, setAddress] = useState(DEMO_ADDRESS);
@@ -136,6 +164,7 @@ export function Dashboard(): JSX.Element {
   }, [address, refreshData]);
 
   const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
+  const valuations = portfolio?.valuations ?? null;
   const sync = portfolio?.sync ?? null;
   const syncDisplay = useMemo(() => {
     if (!sync) {
@@ -150,6 +179,42 @@ export function Dashboard(): JSX.Element {
       : "Sync pending";
     return { blockLabel, timeLabel };
   }, [sync]);
+
+  const summaryItems = useMemo(() => {
+    if (!portfolio) return [];
+    const items = [
+      {
+        label: "Total transfers",
+        value: formatNumber(portfolio.totals.transfers, 0),
+      },
+      {
+        label: "Incoming",
+        value: formatNumber(portfolio.totals.incomingTransfers, 0),
+      },
+      {
+        label: "Outgoing",
+        value: formatNumber(portfolio.totals.outgoingTransfers, 0),
+      },
+      {
+        label: "Counterparties",
+        value: formatNumber(portfolio.totals.counterparties, 0),
+      },
+    ];
+
+    if (valuations) {
+      items.push({ label: "Net USD", value: formatUsd(valuations.netUsd) });
+      items.push({
+        label: "Incoming USD",
+        value: formatUsd(valuations.incomingUsd),
+      });
+      items.push({
+        label: "Outgoing USD",
+        value: formatUsd(valuations.outgoingUsd),
+      });
+    }
+
+    return items;
+  }, [portfolio, valuations]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 py-10">
@@ -200,23 +265,10 @@ export function Dashboard(): JSX.Element {
             {portfolioState.error}. Try again.
           </p>
         ) : portfolio ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard
-              label="Total transfers"
-              value={portfolio.totals.transfers.toLocaleString()}
-            />
-            <SummaryCard
-              label="Incoming"
-              value={portfolio.totals.incomingTransfers.toLocaleString()}
-            />
-            <SummaryCard
-              label="Outgoing"
-              value={portfolio.totals.outgoingTransfers.toLocaleString()}
-            />
-            <SummaryCard
-              label="Counterparties"
-              value={portfolio.totals.counterparties.toLocaleString()}
-            />
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+            {summaryItems.map((item) => (
+              <SummaryCard key={item.label} label={item.label} value={item.value} />
+            ))}
           </div>
         ) : (
           <p className="mt-3 text-sm text-neutral-500">
@@ -240,20 +292,42 @@ export function Dashboard(): JSX.Element {
                 key={holding.token}
                 className="rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60"
               >
-                <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
-                  {holding.symbol ?? "Unknown"}{" "}
-                  <span className="text-xs text-neutral-400">
-                    ({holding.token.slice(0, 6)}…)
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
+                    {holding.symbol ?? "Unknown"}
+                  </p>
+                  <p className="text-xs text-neutral-400">
+                    {holding.token.slice(0, 10)}…
+                  </p>
+                </div>
+                <p className="mt-3 text-2xl font-semibold tracking-tight">
+                  {formatNumber(holding.net, 4)}
                 </p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight">
-                  {Number(holding.net).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })}
+                <p className="text-sm text-neutral-500">
+                  {holding.netUsd ? formatUsd(holding.netUsd) : "USD price unavailable"}
                 </p>
                 <p className="mt-2 text-xs text-neutral-500">
-                  Incoming {holding.incoming}, Outgoing {holding.outgoing}
+                  Incoming {holding.incoming} ({holding.incomingUsd ? formatUsd(holding.incomingUsd) : "—"})
                 </p>
+                <p className="text-xs text-neutral-500">
+                  Outgoing {holding.outgoing} ({holding.outgoingUsd ? formatUsd(holding.outgoingUsd) : "—"})
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.35em] text-neutral-500">
+                  <span className="rounded-full border border-neutral-200 bg-green-50 px-3 py-1 text-green-600">
+                    In {holding.incoming}
+                  </span>
+                  <span className="rounded-full border border-neutral-200 bg-amber-50 px-3 py-1 text-amber-600">
+                    Out {holding.outgoing}
+                  </span>
+                </div>
+                {holding.priceUsd ? (
+                  <p className="mt-3 text-xs text-neutral-400">
+                    Price {formatUsd(holding.priceUsd)}
+                    {holding.priceTimestamp
+                      ? ` · ${new Date(holding.priceTimestamp).toLocaleTimeString()}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>

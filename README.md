@@ -38,7 +38,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 
 - `GET /api/healthz` – verifies database connectivity
 - `GET /api/transfers?address=0x...&chain=eth&direction=all&limit=50&cursor=...` – paginated transfers for a wallet (response includes `sync` metadata for the indexed block/time)
-- `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days (response includes `sync` metadata)
+- `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days (response includes `sync` metadata and USD valuations when prices are available)
 - `POST /tool/sql` – deterministic named SQL tooling for the chat agent (see `/tool/sql` GET for the allowlisted names)
 - `POST /api/chat` – placeholder chat orchestrator stub that will call the deterministic tools
 
@@ -53,7 +53,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `ETH_LOOKBACK_BLOCKS` controls the initial sync window when no cursor exists; defaults to 5000.
 - `RPC_MAX_RETRIES`, `RPC_RETRY_BASE_MS`, and `RPC_RETRY_MAX_MS` tune the exponential backoff for RPC calls (defaults: 5 attempts, 300ms base delay, 4.5s cap).
 - `NEXT_PUBLIC_ETHERSCAN_BASE_URL` configures the explorer links in the dashboard (defaults to mainnet `https://etherscan.io`; set to `https://sepolia.etherscan.io` for Sepolia).
-- Hourly price enrichment: run `npm run start:prices -w worker` (or schedule it) to fetch USD prices from CoinGecko and populate the `prices` table for the tokens seen on the chain.
+- Hourly price enrichment: run `npm run start:prices -w worker` (or schedule it) to fetch USD prices from CoinGecko and populate the `prices` table for the tokens seen on the chain. Free CoinGecko tier supports one token per request, so leave `PRICE_BATCH_SIZE` at `1` unless you supply a Pro API key.
 
 ## Contributing
 

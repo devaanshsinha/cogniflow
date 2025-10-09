@@ -139,9 +139,70 @@ export async function GET(request: Request) {
       entry.outgoing = entry.outgoing.plus(group._sum.amountDec ?? 0);
     });
 
-    const holdings = Array.from(holdingsMap.values())
+    const baseHoldings = Array.from(holdingsMap.values());
+    const tokensForPricing = baseHoldings
+      .map((entry) => entry.token?.toLowerCase())
+      .filter(
+        (token): token is string =>
+          Boolean(token) &&
+          token !== "0x0000000000000000000000000000000000000000",
+      );
+
+    let priceMap = new Map<
+      string,
+      { usd: Prisma.Decimal; timestamp: Date | null }
+    >();
+
+    if (tokensForPricing.length > 0) {
+      const priceRows = await prisma.$queryRaw<
+        Array<{ token: string; usd: Prisma.Decimal; ts: Date | null }>
+      >`
+        SELECT DISTINCT ON ("token") "token", "usd", "ts"
+        FROM "prices"
+        WHERE "chain" = ${chain} AND "token" IN (${Prisma.join(tokensForPricing)})
+        ORDER BY "token", "ts" DESC
+      `;
+
+      priceMap = new Map(
+        priceRows.map((row) => [
+          row.token.toLowerCase(),
+          {
+            usd: new Prisma.Decimal(row.usd ?? 0),
+            timestamp: row.ts ?? null,
+          },
+        ]),
+      );
+    }
+
+    let totalIncomingUsd = new Prisma.Decimal(0);
+    let totalOutgoingUsd = new Prisma.Decimal(0);
+
+    const holdings = baseHoldings
       .map((entry) => {
         const net = entry.incoming.minus(entry.outgoing);
+        const priceInfo = entry.token
+          ? priceMap.get(entry.token.toLowerCase())
+          : undefined;
+        const incomingUsd =
+          priceInfo && !priceInfo.usd.isZero()
+            ? entry.incoming.mul(priceInfo.usd)
+            : null;
+        const outgoingUsd =
+          priceInfo && !priceInfo.usd.isZero()
+            ? entry.outgoing.mul(priceInfo.usd)
+            : null;
+        const netUsd =
+          priceInfo && !priceInfo.usd.isZero()
+            ? net.mul(priceInfo.usd)
+            : null;
+
+        if (incomingUsd) {
+          totalIncomingUsd = totalIncomingUsd.plus(incomingUsd);
+        }
+        if (outgoingUsd) {
+          totalOutgoingUsd = totalOutgoingUsd.plus(outgoingUsd);
+        }
+
         return {
           token: entry.token,
           symbol: entry.symbol,
@@ -149,12 +210,25 @@ export async function GET(request: Request) {
           incoming: entry.incoming.toString(),
           outgoing: entry.outgoing.toString(),
           net: net.toString(),
+          priceUsd: priceInfo ? priceInfo.usd.toString() : null,
+          priceTimestamp: priceInfo?.timestamp
+            ? priceInfo.timestamp.toISOString()
+            : null,
+          incomingUsd: incomingUsd ? incomingUsd.toString() : null,
+          outgoingUsd: outgoingUsd ? outgoingUsd.toString() : null,
+          netUsd: netUsd ? netUsd.toString() : null,
         };
       })
       .sort((a, b) => Number(b.net) - Number(a.net));
 
     const counterpartiesCount =
       Number(counterpartiesResult[0]?.count ?? 0);
+
+    const valuations = {
+      incomingUsd: totalIncomingUsd.toString(),
+      outgoingUsd: totalOutgoingUsd.toString(),
+      netUsd: totalIncomingUsd.minus(totalOutgoingUsd).toString(),
+    };
 
     return NextResponse.json({
       status: "ok",
@@ -169,6 +243,7 @@ export async function GET(request: Request) {
           counterparties: counterpartiesCount,
         },
         holdings,
+        valuations,
         sync: wallet
           ? {
               lastSyncedBlock: wallet.lastSyncedBlock ?? null,

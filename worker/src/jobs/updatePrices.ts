@@ -9,7 +9,17 @@ const SUPPORTED_CHAINS: Record<string, { platform: string }> = {
 };
 
 const DEFAULT_CHAIN = process.env.PRICE_CHAIN ?? "eth";
-const MAX_BATCH = 50;
+
+function resolveBatchSize(): number {
+  const raw = Number.parseInt(process.env.PRICE_BATCH_SIZE ?? "NaN", 10);
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  if (process.env.COINGECKO_API_KEY) {
+    return 50;
+  }
+  return 1;
+}
 
 function truncateToHour(date: Date): Date {
   const copy = new Date(date);
@@ -19,9 +29,10 @@ function truncateToHour(date: Date): Date {
 
 function chunk<T>(items: T[], size: number): T[][] {
   if (items.length === 0) return [];
+  const step = Math.max(1, size);
   const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    batches.push(items.slice(i, i + size));
+  for (let i = 0; i < items.length; i += step) {
+    batches.push(items.slice(i, i + step));
   }
   return batches;
 }
@@ -97,7 +108,9 @@ async function main() {
   const timestamp = truncateToHour(new Date());
   let updates = 0;
 
-  for (const batch of chunk(tokenAddresses, MAX_BATCH)) {
+  const batchSize = resolveBatchSize();
+
+  for (const batch of chunk(tokenAddresses, batchSize)) {
     try {
       const prices = await fetchPrices(targetChain, batch);
       if (prices.size === 0) {

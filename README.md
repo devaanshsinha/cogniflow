@@ -3,6 +3,7 @@
 Cogniflow is an on-chain intelligence agent that lets users explore wallet activity through a chat UI and a dashboard. It combines a lightweight indexer, normalized storage, vector search, and LLM-driven tool use to answer natural-language questions with charts and tables.
 
 ## Monorepo Layout
+
 - `web/` Next.js app (chat, dashboard, API routes)
 - `worker/` Node.js indexer and scheduled jobs
 - `package.json` npm workspaces config
@@ -10,6 +11,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `.gitignore` repo-wide ignore rules
 
 ## Core Capabilities (Planned MVP)
+
 - Connect Ethereum wallets (Sepolia/mainnet read-only)
 - Ingest balances, ERC-20 transfers, and gas metrics
 - Store normalized events in Postgres + pgvector
@@ -17,12 +19,14 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Dashboard cards, transfers table, and simple charts
 
 ## Tech Stack
+
 - Frontend: Next.js 15, React 19, Tailwind CSS 4, TypeScript
 - Backend: Node.js workers, Prisma (up next), Supabase Postgres
 - Data: pgvector embeddings, CoinGecko price enrichment
 - Infra: Vercel (web, cron), Supabase Auth, Alchemy/Infura RPC
 
 ## Getting Started
+
 - `npm install` to bootstrap root and workspace dependencies
 - `cp .env.example .env` and update Supabase/RPC/LLM keys
 - `npx prisma migrate dev` to create tables (Supabase/Postgres URL required)
@@ -31,17 +35,17 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `npm run start -w worker` to boot the indexer (currently logs a stub message)
 
 ## API Routes (so far)
+
 - `GET /api/healthz` – verifies database connectivity
 - `GET /api/transfers?address=0x...&chain=eth&direction=all&limit=50&cursor=...` – paginated transfers for a wallet
 - `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days
 
-## Development Milestones
-- ✅ Day 1: Monorepo scaffolding, Next.js app, worker boot sequence
-- ⏳ Day 2–3: Prisma schema, Supabase wiring, portfolio and transfers APIs
-- ⏳ Day 4–5: Dashboard UI, chat endpoint, named SQL tool execution
-- 🕸️ Later: pgvector search, Solana module, email/Discord summaries
+## Frontend
+
+- Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
 
 ## Contributing
+
 - Run `npm run lint -w web` before opening PRs
 - Keep worker scripts idempotent (upserts keyed by `txHash:logIndex`)
 - Prefer named queries and validated params for any LLM-facing tools

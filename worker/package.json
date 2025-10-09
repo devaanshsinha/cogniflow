@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "ts-node src/indexer.ts",
-    "start:prices": "ts-node src/jobs/updatePrices.ts"
+    "start:prices": "ts-node src/jobs/updatePrices.ts",
+    "start:embeddings": "ts-node src/jobs/updateEmbeddings.ts"
   },
   "keywords": [],
   "author": "",

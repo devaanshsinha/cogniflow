@@ -49,6 +49,8 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Requires `ETH_RPC_URL` (or `ALCHEMY_HTTP_URL`) to be set to an Ethereum JSON-RPC endpoint (Sepolia or mainnet).
 - The worker queries `wallets` by `chain` (default `eth`). Add rows via Prisma/SQL or future auth flows to start ingestion.
 - `ETH_LOOKBACK_BLOCKS` controls the initial sync window when no cursor exists; defaults to 5000.
+- `RPC_MAX_RETRIES`, `RPC_RETRY_BASE_MS`, and `RPC_RETRY_MAX_MS` tune the exponential backoff for RPC calls (defaults: 5 attempts, 300ms base delay, 4.5s cap).
+- `NEXT_PUBLIC_ETHERSCAN_BASE_URL` configures the explorer links in the dashboard (defaults to mainnet `https://etherscan.io`; set to `https://sepolia.etherscan.io` for Sepolia).
 
 ## Contributing
 

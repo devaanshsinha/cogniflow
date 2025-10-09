@@ -44,6 +44,18 @@ const ETH_DEFAULT_LOOKBACK = Number.parseInt(
   process.env.ETH_LOOKBACK_BLOCKS ?? "5000",
   10,
 );
+const RPC_MAX_RETRIES = Number.parseInt(
+  process.env.RPC_MAX_RETRIES ?? "5",
+  10,
+);
+const RPC_RETRY_BASE_MS = Number.parseInt(
+  process.env.RPC_RETRY_BASE_MS ?? "300",
+  10,
+);
+const RPC_RETRY_MAX_MS = Number.parseInt(
+  process.env.RPC_RETRY_MAX_MS ?? "4500",
+  10,
+);
 
 export function getLookbackBlocks(): number {
   return Number.isFinite(ETH_DEFAULT_LOOKBACK) && ETH_DEFAULT_LOOKBACK > 0
@@ -64,7 +76,16 @@ function requireRpcUrl(): string {
   return url;
 }
 
-async function callRpc<T>(method: string, params: unknown[]): Promise<T> {
+type RpcRetryOptions = {
+  logger?: Logger;
+  context?: Record<string, unknown>;
+};
+
+async function callRpc<T>(
+  method: string,
+  params: unknown[],
+  options: RpcRetryOptions = {},
+): Promise<T> {
   const rpcUrl = requireRpcUrl();
   const payload: JsonRpcRequest = {
     id: ++rpcIdCounter,
@@ -73,26 +94,119 @@ async function callRpc<T>(method: string, params: unknown[]): Promise<T> {
     params,
   };
 
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const maxAttempts =
+    Number.isFinite(RPC_MAX_RETRIES) && RPC_MAX_RETRIES > 0
+      ? RPC_MAX_RETRIES
+      : 5;
 
-  if (!response.ok) {
-    throw new Error(
-      `RPC request failed (${response.status}): ${await response.text()}`,
-    );
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      const response = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorBody = await safeText(response);
+        const error = new Error(
+          `RPC request failed (${response.status}): ${errorBody}`,
+        );
+        (error as { status?: number }).status = response.status;
+        throw error;
+      }
+
+      const body = (await response.json()) as JsonRpcResponse<T>;
+      if (body.error) {
+        const error = new Error(
+          `RPC error ${body.error.code}: ${body.error.message}`,
+        );
+        (error as { code?: number }).code = body.error.code;
+        throw error;
+      }
+      if (typeof body.result === "undefined") {
+        throw new Error("RPC response missing result");
+      }
+      return body.result;
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetry(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      const delay = computeBackoff(attempt);
+      options.logger?.warn(
+        {
+          attempt,
+          delay,
+          method,
+          ...(options.context ?? {}),
+          err: error,
+        },
+        "Retrying RPC request after failure",
+      );
+      await wait(delay);
+    }
   }
 
-  const body = (await response.json()) as JsonRpcResponse<T>;
-  if (body.error) {
-    throw new Error(`RPC error ${body.error.code}: ${body.error.message}`);
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("RPC call failed after retries");
+}
+
+function shouldRetry(error: unknown): boolean {
+  if (error == null) return false;
+  if (error instanceof Error) {
+    const status = (error as { status?: number }).status;
+    const code = (error as { code?: number }).code;
+    const message = error.message.toLowerCase();
+
+    if (status && [408, 429, 500, 502, 503, 504].includes(status)) {
+      return true;
+    }
+
+    if (code && [429, -32002].includes(code)) {
+      return true;
+    }
+
+    if (
+      message.includes("timeout") ||
+      message.includes("temporarily unavailable") ||
+      message.includes("forwarder error")
+    ) {
+      return true;
+    }
   }
-  if (typeof body.result === "undefined") {
-    throw new Error("RPC response missing result");
+  return false;
+}
+
+function computeBackoff(attempt: number): number {
+  const base =
+    Number.isFinite(RPC_RETRY_BASE_MS) && RPC_RETRY_BASE_MS > 0
+      ? RPC_RETRY_BASE_MS
+      : 300;
+  const max =
+    Number.isFinite(RPC_RETRY_MAX_MS) && RPC_RETRY_MAX_MS > 0
+      ? RPC_RETRY_MAX_MS
+      : 4500;
+  const jitter = Math.random() * base;
+  const delay = Math.min(base * 2 ** (attempt - 1) + jitter, max);
+  return Math.floor(delay);
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function safeText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return "<unreadable body>";
   }
-  return body.result;
 }
 
 export async function getLatestBlockNumber(): Promise<number> {
@@ -109,9 +223,14 @@ export type JsonRpcBlock = {
 
 export async function getBlockByNumber(
   blockNumber: number,
+  logger?: Logger,
 ): Promise<JsonRpcBlock> {
   const hexBlock = `0x${blockNumber.toString(16)}`;
-  return await callRpc<JsonRpcBlock>("eth_getBlockByNumber", [hexBlock, false]);
+  return await callRpc<JsonRpcBlock>(
+    "eth_getBlockByNumber",
+    [hexBlock, false],
+    { logger, context: { blockNumber } },
+  );
 }
 
 export async function getAssetTransfersForWallet(options: {
@@ -153,6 +272,10 @@ export async function getAssetTransfersForWallet(options: {
     const response = await callRpc<AssetTransferResponse>(
       "alchemy_getAssetTransfers",
       [params],
+      {
+        logger,
+        context: { address, direction, fromBlock, toBlock, page },
+      },
     );
     transfers.push(...(response.transfers ?? []));
     pageKey = response.pageKey;

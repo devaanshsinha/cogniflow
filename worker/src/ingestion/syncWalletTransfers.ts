@@ -179,7 +179,7 @@ async function upsertBlocks(blockNumbers: number[], logger: Logger) {
   const missing = blockNumbers.filter((number) => !existingSet.has(number));
 
   for (const blockNumber of missing) {
-    const block = await getBlockByNumber(blockNumber);
+    const block = await getBlockByNumber(blockNumber, logger);
     const timestamp = Number.parseInt(block.timestamp, 16) * 1000;
     await prisma.block.upsert({
       where: { number: blockNumber },

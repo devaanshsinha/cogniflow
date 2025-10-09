@@ -49,6 +49,8 @@ type FetchState = {
 };
 
 const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
+const EXPLORER_BASE_URL =
+  process.env.NEXT_PUBLIC_ETHERSCAN_BASE_URL ?? "https://etherscan.io";
 
 export function Dashboard(): JSX.Element {
   const [address, setAddress] = useState(DEMO_ADDRESS);
@@ -294,7 +296,7 @@ export function Dashboard(): JSX.Element {
                       </Td>
                       <Td className="whitespace-nowrap text-xs text-blue-600 hover:underline">
                         <a
-                          href={`https://etherscan.io/tx/${transfer.txHash}`}
+                          href={`${EXPLORER_BASE_URL}/tx/${transfer.txHash}`}
                           target="_blank"
                           rel="noreferrer"
                         >

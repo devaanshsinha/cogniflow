@@ -24,9 +24,11 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 
 ## Getting Started
 - `npm install` to bootstrap root and workspace dependencies
+- `cp .env.example .env` and update Supabase/RPC/LLM keys
+- `npx prisma migrate dev` to create tables (Supabase/Postgres URL required)
+- `npx prisma generate` whenever the schema changes
 - `npm run dev -w web` to launch the Next.js app at http://localhost:3000
 - `npm run start -w worker` to boot the indexer (currently logs a stub message)
-- Copy `.env.example` (coming soon) to `.env` with Supabase, RPC, and OpenAI keys
 
 ## Development Milestones
 - ✅ Day 1: Monorepo scaffolding, Next.js app, worker boot sequence

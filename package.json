@@ -4,5 +4,11 @@
   "workspaces": [
     "web",
     "worker"
-  ]
+  ],
+  "devDependencies": {
+    "prisma": "^6.17.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.17.0"
+  }
 }

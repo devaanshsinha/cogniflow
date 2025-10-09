@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Block {
+  number     Int        @id
+  hash       String     @unique
+  parentHash String     @map("parent_hash")
+  timestamp  DateTime
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  transfers  Transfer[]
+
+  @@map("blocks")
+}
+
+model Transfer {
+  id          String       @id
+  blockNumber Int?         @map("block_number")
+  timestamp   DateTime
+  txHash      String       @map("tx_hash")
+  logIndex    Int          @map("log_index")
+  token       String
+  fromAddr    String       @map("from_addr")
+  toAddr      String       @map("to_addr")
+  amountRaw   Decimal      @map("amount_raw") @db.Decimal(78, 0)
+  amountDec   Decimal      @map("amount_dec") @db.Decimal(78, 18)
+  symbol      String?
+  decimals    Int?
+  chain       String
+  stale       Boolean      @default(false)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  block       Block?       @relation(fields: [blockNumber], references: [number])
+  embedding   TxEmbedding?
+
+  @@index([toAddr])
+  @@index([fromAddr])
+  @@index([token])
+  @@index([blockNumber])
+  @@map("transfers")
+}
+
+model PriceSnapshot {
+  chain     String
+  token     String
+  timestamp DateTime @map("ts")
+  usd       Decimal  @db.Decimal(38, 10)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([chain, token, timestamp])
+  @@map("prices")
+}
+
+model TxEmbedding {
+  id        String                     @id
+  embedding Unsupported("vector(768)")
+  meta      Json?
+  createdAt DateTime                   @default(now()) @map("created_at")
+  transfer  Transfer                   @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("tx_embeddings")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  wallets   Wallet[]
+
+  @@map("users")
+}
+
+model Wallet {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  chain     String
+  address   String
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chain, address])
+  @@map("wallets")
+}

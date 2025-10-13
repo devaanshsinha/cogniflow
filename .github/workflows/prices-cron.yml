@@ -1,0 +1,37 @@
+name: Run prices job
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call production /api/prices
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL secret is not set; please add it in GitHub settings."
+            exit 1
+          fi
+          if [ -z "$INGESTION_SECRET" ]; then
+            echo "INGESTION_SECRET secret is not set; please add it in GitHub settings."
+            exit 1
+          fi
+
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
+            -X POST "${APP_URL}/api/prices" \
+            -H "Authorization: Bearer ${INGESTION_SECRET}" \
+            -H "Content-Type: application/json")
+
+          cat response.json
+          rm response.json
+
+          if [ "$HTTP_STATUS" -ge 400 ]; then
+            echo "Request failed with status ${HTTP_STATUS}"
+            exit 1
+          fi

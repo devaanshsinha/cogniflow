@@ -155,6 +155,7 @@ Run from repository root (dotenv config required):
    - Host worker (cron, Render, Supabase Edge Function, etc.) to run ingestion/price/embedding jobs.
    - Optionally add monitoring/log aggregation.
    - Convert ingestion/price/embedding scripts into HTTP-triggered endpoints or queue-backed jobs so they can be driven by Vercel Cron/GitHub Actions instead of manual execution.
+   - Once hosted, add on-demand ingestion endpoints (e.g., `/api/ingest`) that the web app can call when a wallet is connected or refreshed.
 2. **Chat & UI Enhancements**
    - Build chat interface in the dashboard that consumes `/api/chat`.
    - Add support for more named queries (top tokens, gas analysis, net positions in USD).
@@ -209,7 +210,7 @@ Run from repository root (dotenv config required):
 - **web/components/dashboard.tsx** – entire dashboard UI (address form, cards, tables, search).
 - **web/components/ui/** – reusable shadcn-style components.
 - **web/app/signin/page.tsx, web/app/signup/page.tsx** – standalone authentication views.
-- **Deployment / Cron** – plan to deploy the web app to Vercel with scheduled jobs for worker scripts (prices, embeddings, ingestion) via Vercel Cron or external scheduler hitting secure API routes.
+ - **Deployment / Cron** – plan to deploy the web app to Vercel with scheduled jobs for worker scripts (prices, embeddings, ingestion) via Vercel Cron or external scheduler hitting secure API routes; follow up with on-demand ingestion endpoints once hosting is live.
 
 ---
 

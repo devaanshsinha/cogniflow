@@ -35,6 +35,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Visit http://localhost:3000/signin to log in (email/password or Google) before accessing the dashboard
 - Sign-up lives at http://localhost:3000/signup; after confirming your email (if required) return to `/signin`
 - When ready for production, deploy the web workspace to Vercel (set env vars in project settings) and configure worker jobs via Vercel Cron or another scheduler (Render, Fly, GitHub Actions)
+- After deploying the web app, add an authenticated ingestion API (e.g., `/api/ingest`) so the frontend can trigger wallet syncs on demand, and schedule periodic jobs to keep data fresh.
 - `npm run start -w worker` to ingest ERC-20 transfers for tracked wallets
 
 ## API Routes (so far)

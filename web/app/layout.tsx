@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Session } from "@supabase/supabase-js";
 import "./globals.css";
 import { SupabaseProvider } from "@/components/providers/supabase-provider";
 import { createServerSupabaseClient } from "@/lib/supabase/server-client";
@@ -19,15 +20,34 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const supabase = await createServerSupabaseClient();
-  await supabase.auth.getUser();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+
+  const authClient = supabase.auth as typeof supabase.auth & {
+    suppressGetSessionWarning?: boolean;
+  };
+  authClient.suppressGetSessionWarning = true;
+
+  const [
+    {
+      data: { user },
+    },
+    {
+      data: { session },
+    },
+  ] = await Promise.all([supabase.auth.getUser(), supabase.auth.getSession()]);
+
+  const initialSession: Session | null = session
+    ? {
+        ...session,
+        user: user ?? session.user ?? null,
+      }
+    : null;
 
   return (
     <html lang="en">
       <body className="antialiased">
-        <SupabaseProvider initialSession={session}>{children}</SupabaseProvider>
+        <SupabaseProvider initialSession={initialSession}>
+          {children}
+        </SupabaseProvider>
       </body>
     </html>
   );

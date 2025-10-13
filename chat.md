@@ -146,16 +146,14 @@ Run from repository root (dotenv config required):
 - **APIs:** `/api/transfers`, `/api/portfolio`, `/api/search`, `/tool/sql`, `/api/chat` are live and returning enriched data.
 - **UI:** Dashboard renders real wallets, holdings cards display price info, the chat panel calls `/api/chat` to display answers (including tables, sources, and chart placeholders), and users authenticate via dedicated `/signin` and `/signup` flows (email/password or Google OAuth) before accessing data. Direct semantic search is exposed via the API and leveraged by the chat flow.
 - **LLM tooling:** Deterministic endpoints ready; full chat orchestration (agent / UI conversation) still to be finalized.
-- **Deployment:** Not yet deployed. Web app is Vercel-ready; worker & jobs need cron/runner (e.g. Vercel cron hitting an ingestion endpoint or a sidecar process).
+- **Deployment:** Web app is deployed on Vercel (env vars + Prisma generate handled in build). Worker logic is shared with the Next.js app; `/api/ingest`, `/api/prices`, and `/api/embeddings` expose the jobs behind an `INGESTION_SECRET`. Vercel cron wiring and UI-triggered refresh remain.
 
 ## Pending / Next Steps
 
-1. **Automation & Deployment**
-   - Deploy web to Vercel (set env vars).
-   - Host worker (cron, Render, Supabase Edge Function, etc.) to run ingestion/price/embedding jobs.
-   - Optionally add monitoring/log aggregation.
-   - Convert ingestion/price/embedding scripts into HTTP-triggered endpoints or queue-backed jobs so they can be driven by Vercel Cron/GitHub Actions instead of manual execution.
-   - Once hosted, add on-demand ingestion endpoints (e.g., `/api/ingest`) that the web app can call when a wallet is connected or refreshed.
+1. **Worker Automation**
+   - Schedule periodic runs with Vercel Cron (or GitHub Actions/Render) to call `/api/ingest`, `/api/prices`, and `/api/embeddings` with the `INGESTION_SECRET`.
+   - Add on-demand wallet refresh in the dashboard by POSTing to `/api/ingest`.
+   - Layer in monitoring/log aggregation once cron hooks are live.
 2. **Chat & UI Enhancements**
    - Build chat interface in the dashboard that consumes `/api/chat`.
    - Add support for more named queries (top tokens, gas analysis, net positions in USD).
@@ -196,21 +194,26 @@ Run from repository root (dotenv config required):
 ## Quick Reference (files & responsibilities)
 
 - **worker/src/indexer.ts** – main loop; ensures wallets stay current.
-- **worker/src/ingestion/syncWalletTransfers.ts** – normalization, Prisma upserts.
-- **worker/src/clients/alchemy.ts** – RPC client (retries, logging).
-- **worker/src/jobs/updatePrices.ts** – CoinGecko fetch & upsert.
-- **worker/src/jobs/updateEmbeddings.ts** – OpenAI embeddings & normalization.
+- **shared/ingestion/syncWalletTransfers.ts** – normalization + Prisma upserts shared by worker and API routes.
+- **shared/clients/alchemy.ts** – RPC client (retries, logging safeguards).
+- **shared/jobs/updatePrices.ts** – CoinGecko enrichment logic (worker + API reuse).
+- **shared/jobs/updateEmbeddings.ts** – OpenAI embedding generation + vector writes.
+- **worker/src/jobs/updatePrices.ts** – CLI wrapper for the shared price updater.
+- **worker/src/jobs/updateEmbeddings.ts** – CLI wrapper for the shared embedding job.
 - **web/app/api/transfers/route.ts** – paginated transfers, returns USD + sync.
 - **web/app/api/portfolio/route.ts** – aggregated stats, holdings, valuations.
 - **web/app/api/search/route.ts** – semantic search with USD awareness.
 - **web/app/api/chat/route.ts** – intent router for chat/tooling.
+- **web/app/api/ingest/route.ts** – secure ingestion trigger; loops wallets & calls `syncWalletTransfers`.
+- **web/app/api/prices/route.ts** – secure price updater calling CoinGecko via shared job.
+- **web/app/api/embeddings/route.ts** – secure embeddings generator using shared OpenAI job.
 - **web/lib/tools/sqlQueries.ts** – named SQL queries & executors.
 - **web/lib/supabase/** – browser/server client helpers for Supabase Auth.
 - **web/components/providers/supabase-provider.tsx** – wraps the app with Supabase session context.
 - **web/components/dashboard.tsx** – entire dashboard UI (address form, cards, tables, search).
 - **web/components/ui/** – reusable shadcn-style components.
 - **web/app/signin/page.tsx, web/app/signup/page.tsx** – standalone authentication views.
- - **Deployment / Cron** – plan to deploy the web app to Vercel with scheduled jobs for worker scripts (prices, embeddings, ingestion) via Vercel Cron or external scheduler hitting secure API routes; follow up with on-demand ingestion endpoints once hosting is live.
+ - **Deployment / Cron** – schedule Vercel Cron (or external) to hit `/api/ingest`, `/api/prices`, `/api/embeddings` with the shared secret; follow up with UI-driven on-demand ingestion.
 
 ---
 

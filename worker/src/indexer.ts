@@ -1,7 +1,7 @@
 import "dotenv/config";
 import pino from "pino";
-import { prisma, disconnectPrisma } from "./prisma";
-import { syncWalletTransfers } from "./ingestion/syncWalletTransfers";
+import prisma, { disconnectPrisma } from "../../shared/prisma";
+import { syncWalletTransfers } from "../../shared/ingestion/syncWalletTransfers";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 

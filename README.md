@@ -35,7 +35,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Visit http://localhost:3000/signin to log in (email/password or Google) before accessing the dashboard
 - Sign-up lives at http://localhost:3000/signup; after confirming your email (if required) return to `/signin`
 - When ready for production, deploy the web workspace to Vercel (set env vars in project settings) and configure worker jobs via Vercel Cron or another scheduler (Render, Fly, GitHub Actions)
-- After deploying the web app, add an authenticated ingestion API (e.g., `/api/ingest`) so the frontend can trigger wallet syncs on demand, and schedule periodic jobs to keep data fresh.
+- After deploying the web app, set `INGESTION_SECRET` in Vercel and schedule cron jobs that call `/api/ingest`, `/api/prices`, and `/api/embeddings` with `Authorization: Bearer <secret>` to keep data fresh.
 - `npm run start -w worker` to ingest ERC-20 transfers for tracked wallets
 
 ## API Routes (so far)
@@ -46,6 +46,9 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `GET /api/search?q=...&address=0x...&chain=eth` – semantic search over transfer embeddings (requires the embedding job to populate `tx_embeddings`)
 - `POST /tool/sql` – deterministic named SQL tooling for the chat agent (see `/tool/sql` GET for the allowlisted names)
 - `POST /api/chat` – chat orchestrator that calls deterministic SQL tools and semantic search when you ask discovery-style questions
+- `POST /api/ingest` – triggers ERC-20 ingestion for all wallets (or a provided `{ "address": "0x..." }` payload); requires `Authorization: Bearer <INGESTION_SECRET>`
+- `POST /api/prices` – runs the CoinGecko enrichment job with optional `{ "chain": "...", "tokens": ["0x..."] }`; requires `Authorization: Bearer <INGESTION_SECRET>`
+- `POST /api/embeddings` – generates OpenAI embeddings for pending transfers with optional `{ "chain": "...", "maxRecords": 200 }`; requires `Authorization: Bearer <INGESTION_SECRET>`
 
 ## Frontend
 
@@ -78,6 +81,6 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Run `npm run lint -w web` before opening PRs
 - Keep worker scripts idempotent (upserts keyed by `txHash:logIndex`)
 - Prefer named queries and validated params for any LLM-facing tools
-- In production, schedule the worker jobs (ingestion, prices, embeddings) via Vercel Cron, GitHub Actions, or another scheduler hitting a secure webhook/API route so manual runs are no longer needed.
+- In production, schedule the worker jobs (ingestion, prices, embeddings) via Vercel Cron, GitHub Actions, or another scheduler that calls `/api/ingest`, `/api/prices`, and `/api/embeddings` with the shared `INGESTION_SECRET` header so manual runs are no longer needed.
 
 Questions or ideas? Open an issue or start a discussion in the repo.

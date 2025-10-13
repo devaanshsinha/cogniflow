@@ -1,4 +1,4 @@
-import type { Logger } from "pino";
+import { ensureLogger, type Logger } from "../logger";
 
 type JsonRpcRequest = {
   id: number;
@@ -102,6 +102,8 @@ async function callRpc<T>(
   let attempt = 0;
   let lastError: unknown;
 
+  const logger = ensureLogger(options.logger);
+
   while (attempt < maxAttempts) {
     attempt += 1;
     try {
@@ -138,13 +140,13 @@ async function callRpc<T>(
         throw error;
       }
       const delay = computeBackoff(attempt);
-      options.logger?.warn(
+      logger.warn(
         {
           attempt,
           delay,
           method,
           ...(options.context ?? {}),
-          err: error,
+          err: error instanceof Error ? error.message : String(error),
         },
         "Retrying RPC request after failure",
       );
@@ -234,7 +236,7 @@ export async function getBlockByNumber(
 }
 
 export async function getAssetTransfersForWallet(options: {
-  logger: Logger;
+  logger?: Logger;
   address: string;
   fromBlock: number;
   toBlock: number;
@@ -263,6 +265,8 @@ export async function getAssetTransfersForWallet(options: {
   let pageKey: string | undefined;
   let page = 0;
 
+  const log = ensureLogger(logger);
+
   do {
     const params = { ...paramsBase };
     if (pageKey) {
@@ -273,7 +277,7 @@ export async function getAssetTransfersForWallet(options: {
       "alchemy_getAssetTransfers",
       [params],
       {
-        logger,
+        logger: log,
         context: { address, direction, fromBlock, toBlock, page },
       },
     );
@@ -282,7 +286,7 @@ export async function getAssetTransfersForWallet(options: {
     page += 1;
 
     if (page >= maxPages && pageKey) {
-      logger.warn(
+      log.warn(
         { address, direction, fromBlock, toBlock, pageKey },
         "Reached max pagination depth while fetching transfers",
       );

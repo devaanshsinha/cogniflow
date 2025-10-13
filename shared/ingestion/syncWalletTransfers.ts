@@ -1,5 +1,4 @@
 import type { Wallet } from "@prisma/client";
-import type { Logger } from "pino";
 import { prisma } from "../prisma";
 import {
   getAssetTransfersForWallet,
@@ -8,6 +7,7 @@ import {
   getLookbackBlocks,
   type AlchemyAssetTransfer,
 } from "../clients/alchemy";
+import { ensureLogger, type Logger } from "../logger";
 
 type NormalizedTransfer = {
   id: string;
@@ -29,8 +29,9 @@ const MAX_DECIMALS_STORED = 18;
 
 export async function syncWalletTransfers(
   wallet: Wallet,
-  logger: Logger,
+  logger?: Logger,
 ): Promise<void> {
+  const log = ensureLogger(logger);
   const latestBlock = await getLatestBlockNumber();
   const lookback = getLookbackBlocks();
 
@@ -41,7 +42,7 @@ export async function syncWalletTransfers(
   const fromBlock = Math.max(fromBlockCandidate, 0);
 
   if (fromBlock > latestBlock) {
-    logger.info(
+    log.info(
       {
         address: wallet.address,
         lastSyncedBlock: wallet.lastSyncedBlock,
@@ -52,21 +53,21 @@ export async function syncWalletTransfers(
     return;
   }
 
-  logger.info(
+  log.info(
     { address: wallet.address, fromBlock, toBlock: latestBlock },
     "Fetching ERC-20 transfers",
   );
 
   const [incoming, outgoing] = await Promise.all([
     getAssetTransfersForWallet({
-      logger,
+      logger: log,
       address: wallet.address,
       fromBlock,
       toBlock: latestBlock,
       direction: "incoming",
     }),
     getAssetTransfersForWallet({
-      logger,
+      logger: log,
       address: wallet.address,
       fromBlock,
       toBlock: latestBlock,
@@ -83,7 +84,7 @@ export async function syncWalletTransfers(
         lastSyncedAt: new Date(),
       },
     });
-    logger.info(
+    log.info(
       { address: wallet.address, latestBlock },
       "No transfers discovered in window",
     );
@@ -95,8 +96,8 @@ export async function syncWalletTransfers(
     new Set(normalized.map((transfer) => transfer.blockNumber)),
   );
 
-  await upsertBlocks(uniqueBlocks, logger);
-  await upsertTransfers(normalized, logger);
+  await upsertBlocks(uniqueBlocks, log);
+  await upsertTransfers(normalized, log);
 
   const maxSyncedBlock = normalized.reduce(
     (acc, transfer) => Math.max(acc, transfer.blockNumber),
@@ -111,7 +112,7 @@ export async function syncWalletTransfers(
     },
   });
 
-  logger.info(
+  log.info(
     {
       address: wallet.address,
       transfers: normalized.length,
@@ -141,7 +142,8 @@ function normalizeTransfers(
         transfer.uniqueId?.toLowerCase() ?? `${txHash}:${logIndex.toString()}`;
 
       const tokenAddress =
-        transfer.rawContract?.address?.toLowerCase() ?? "0x0000000000000000000000000000000000000000";
+        transfer.rawContract?.address?.toLowerCase() ??
+        "0x0000000000000000000000000000000000000000";
       const decimals = parseIntNullable(transfer.rawContract?.decimal);
       const symbol = transfer.asset ?? null;
 
@@ -195,7 +197,7 @@ async function upsertBlocks(blockNumbers: number[], logger: Logger) {
         timestamp: new Date(timestamp),
       },
     });
-    logger.debug({ blockNumber }, "Upserted block metadata");
+    logger.debug?.({ blockNumber }, "Upserted block metadata");
   }
 }
 
@@ -244,10 +246,7 @@ async function upsertTransfers(
       ),
     );
   }
-  logger.info(
-    { inserted: transfers.length },
-    "Upserted transfer records",
-  );
+  logger.info({ inserted: transfers.length }, "Upserted transfer records");
 }
 
 function parseRawValue(transfer: AlchemyAssetTransfer): bigint {

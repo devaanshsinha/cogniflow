@@ -41,11 +41,12 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `GET /api/portfolio?address=0x...&chain=eth&days=7` – aggregated balances and counters for the last N days (response includes `sync` metadata and USD valuations when prices are available)
 - `GET /api/search?q=...&address=0x...&chain=eth` – semantic search over transfer embeddings (requires the embedding job to populate `tx_embeddings`)
 - `POST /tool/sql` – deterministic named SQL tooling for the chat agent (see `/tool/sql` GET for the allowlisted names)
-- `POST /api/chat` – placeholder chat orchestrator stub that will call the deterministic tools
+- `POST /api/chat` – chat orchestrator that calls deterministic SQL tools and semantic search when you ask discovery-style questions
 
 ## Frontend
 
 - Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
+- Built-in semantic search box lets you type natural-language queries ("Find recent large transfers") which calls `/api/search` under the hood and renders the ranked matches.
 
 ## Indexer Notes
 

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
   executeNamedQuery,
   listNamedQueries,
   type NamedQueryName,
 } from "@/lib/tools/sqlQueries";
+import prisma from "@/lib/prisma";
+import { getQueryEmbedding } from "@/lib/embeddings";
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -39,6 +42,11 @@ type ToolCall =
         start: string;
         end: string;
       };
+    }
+  | {
+      kind: "semanticSearch";
+      query: string;
+      limit: number;
     };
 
 export async function POST(request: Request) {
@@ -80,13 +88,35 @@ export async function POST(request: Request) {
       });
     }
 
-    const namedRequest = {
-      name: toolCall.kind as NamedQueryName,
-      params: toolCall.params,
-    };
+    let responsePayload:
+      | ReturnType<typeof buildResponse>
+      | ReturnType<typeof buildSearchResponse>;
+    let matchedIntent: string = toolCall.kind;
 
-    const result = await executeNamedQuery(namedRequest);
-    const responsePayload = buildResponse(toolCall.kind, result, window);
+    if (toolCall.kind === "semanticSearch") {
+      if (!process.env.OPENAI_API_KEY) {
+        return NextResponse.json({
+          status: "error",
+          message:
+            "Semantic search requires OPENAI_API_KEY. Configure it before using this capability.",
+        });
+      }
+      const results = await runSemanticSearch({
+        query: toolCall.query,
+        limit: toolCall.limit,
+        address: parsed.address,
+        chain: parsed.chain,
+      });
+      responsePayload = buildSearchResponse(results, toolCall.query);
+      matchedIntent = "semanticSearch";
+    } else {
+      const namedRequest = {
+        name: toolCall.kind as NamedQueryName,
+        params: toolCall.params,
+      };
+      const result = await executeNamedQuery(namedRequest);
+      responsePayload = buildResponse(toolCall.kind, result, window);
+    }
 
     return NextResponse.json({
       status: "ok",
@@ -95,7 +125,10 @@ export async function POST(request: Request) {
         debug: {
           availableQueries: listNamedQueries(),
           interpretedWindow: window,
-          matchedIntent: toolCall.kind,
+          matchedIntent,
+          ...(toolCall.kind === "semanticSearch"
+            ? { searchQuery: toolCall.query }
+            : {}),
         },
       },
     });
@@ -211,7 +244,83 @@ function inferToolCall(
     };
   }
 
+  if (
+    lower.includes("search") ||
+    lower.includes("find") ||
+    lower.includes("look up") ||
+    lower.includes("lookup") ||
+    lower.includes("discover") ||
+    lower.includes("similar") ||
+    lower.includes("transactions")
+  ) {
+    const limitMatch = lower.match(/top\s+(\d{1,2})|first\s+(\d{1,2})/);
+    const limit = limitMatch
+      ? Math.min(Math.max(Number.parseInt(limitMatch[1] ?? limitMatch[2], 10), 1), 15)
+      : 10;
+    return {
+      kind: "semanticSearch",
+      query: content.trim(),
+      limit,
+    };
+  }
+
   return null;
+}
+
+type SemanticSearchResult = {
+  id: string;
+  score: number;
+  timestamp: Date;
+  tx_hash: string;
+  from_addr: string;
+  to_addr: string;
+  amount_dec: Prisma.Decimal;
+  symbol: string | null;
+  chain: string;
+  meta: Prisma.JsonValue | null;
+};
+
+async function runSemanticSearch(options: {
+  query: string;
+  limit: number;
+  address: string;
+  chain: "eth";
+}): Promise<SemanticSearchResult[]> {
+  const embedding = await getQueryEmbedding(options.query);
+  const vectorSql = embeddingToSql(embedding);
+  const addressCondition = Prisma.sql`
+    AND (t."from_addr" = ${options.address} OR t."to_addr" = ${options.address})
+  `;
+
+  const rows = await prisma.$queryRaw<SemanticSearchResult[]>(
+    Prisma.sql`
+      SELECT
+        te.id,
+        1 - (te.embedding <=> ${vectorSql}) AS score,
+        t."timestamp",
+        t."tx_hash",
+        t."from_addr",
+        t."to_addr",
+        t."amount_dec",
+        t."symbol",
+        t."chain",
+        te."meta"
+      FROM "tx_embeddings" te
+      JOIN "transfers" t ON t."id" = te."id"
+      WHERE t."chain" = ${options.chain}
+        ${options.address ? addressCondition : Prisma.empty}
+      ORDER BY te.embedding <=> ${vectorSql}
+      LIMIT ${options.limit}
+    `,
+  );
+
+  return rows;
+}
+
+function embeddingToSql(embedding: number[]) {
+  return Prisma.sql`ARRAY[${Prisma.join(
+    embedding.map((value) => Prisma.sql`${value}`),
+  )}]::vector`;
 }
 
 function buildResponse(
@@ -299,6 +408,53 @@ function buildResponse(
     chart: null,
     sources: [],
   };
+}
+
+function buildSearchResponse(results: SemanticSearchResult[], query: string) {
+  if (results.length === 0) {
+    return {
+      answer: `No similar transfers found for “${query}”. Try refining the query or widening the time range.`,
+      tables: [],
+      chart: null,
+      sources: ["tx_embeddings"],
+    } as const;
+  }
+
+  const tableRows = results.map((row) => [
+    new Date(row.timestamp).toLocaleString(),
+    `${row.from_addr.slice(0, 10)}…`,
+    `${row.to_addr.slice(0, 10)}…`,
+    row.amount_dec.toString(),
+    row.symbol ?? "—",
+    row.score.toFixed(3),
+    `${row.tx_hash.slice(0, 12)}…`,
+  ]);
+
+  const top = results[0];
+  const answer = `Found ${results.length} similar transfers. Top match: ${
+    top.symbol ?? "token"
+  } transfer of ${top.amount_dec.toString()} at ${new Date(top.timestamp).toLocaleString()}.`;
+
+  return {
+    answer,
+    tables: [
+      {
+        title: `Semantic matches for “${query}”`,
+        columns: [
+          "Timestamp",
+          "From",
+          "To",
+          "Amount",
+          "Symbol",
+          "Similarity",
+          "Tx",
+        ],
+        rows: tableRows,
+      },
+    ],
+    chart: null,
+    sources: ["tx_embeddings", "transfers"],
+  } as const;
 }
 
 type TopCounterpartyRow = {

@@ -61,6 +61,21 @@ type TransfersResponse = {
   } | null;
 };
 
+type SearchResponse = {
+  status: "ok";
+  data: Array<{
+    id: string;
+    score: number;
+    timestamp: string;
+    txHash: string;
+    from: string;
+    to: string;
+    amount: string;
+    symbol: string | null;
+    chain: string;
+  }>;
+};
+
 type FetchState = {
   loading: boolean;
   error: string | null;
@@ -88,6 +103,11 @@ function formatUsd(value: string | null) {
   })}`;
 }
 
+function shortenAddress(value: string, length = 10) {
+  if (value.length <= length) return value;
+  return `${value.slice(0, length)}…`;
+}
+
 export function Dashboard(): JSX.Element {
   const [address, setAddress] = useState(DEMO_ADDRESS);
   const [pendingAddress, setPendingAddress] = useState(DEMO_ADDRESS);
@@ -105,6 +125,15 @@ export function Dashboard(): JSX.Element {
   const [transfers, setTransfers] = useState<
     TransfersResponse["data"]
   >([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchState, setSearchState] = useState<FetchState>({
+    loading: false,
+    error: null,
+  });
+  const [searchResults, setSearchResults] = useState<
+    SearchResponse["data"]
+  >([]);
+  const [searchRan, setSearchRan] = useState(false);
 
   const refreshData = useCallback(
     async (nextAddress: string) => {
@@ -112,6 +141,9 @@ export function Dashboard(): JSX.Element {
       if (!normalized) {
         setPortfolio(null);
         setTransfers([]);
+        setSearchResults([]);
+        setSearchState({ loading: false, error: null });
+        setSearchRan(false);
         return;
       }
 
@@ -138,6 +170,9 @@ export function Dashboard(): JSX.Element {
 
         setPortfolio(portfolioJson.data);
         setTransfers(transfersJson.data);
+        setSearchResults([]);
+        setSearchState({ loading: false, error: null });
+        setSearchRan(false);
         setPortfolioState({ loading: false, error: null });
         setTransfersState({ loading: false, error: null });
       } catch (error) {
@@ -216,6 +251,50 @@ export function Dashboard(): JSX.Element {
     return items;
   }, [portfolio, valuations]);
 
+  const onSearchSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const query = searchQuery.trim();
+      if (!query) {
+        setSearchResults([]);
+        setSearchState({ loading: false, error: null });
+        setSearchRan(false);
+        return;
+      }
+      setSearchState({ loading: true, error: null });
+      try {
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(query)}&address=${address}`
+        );
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.message ?? "Failed to run search");
+        }
+        const json = (await response.json()) as SearchResponse;
+        const normalized = json.data.map((row) => ({
+          id: row.id,
+          score: row.score,
+          timestamp: row.timestamp,
+          txHash: row.txHash,
+          from: row.from,
+          to: row.to,
+          amount: row.amount,
+          symbol: row.symbol,
+          chain: row.chain,
+        }));
+        setSearchResults(normalized);
+        setSearchState({ loading: false, error: null });
+        setSearchRan(true);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unexpected error";
+        setSearchState({ loading: false, error: message });
+        setSearchRan(false);
+      }
+    },
+    [searchQuery, address]
+  );
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 py-10">
       <header className="flex flex-col gap-2">
@@ -275,6 +354,90 @@ export function Dashboard(): JSX.Element {
             Enter an address to see portfolio stats.
           </p>
         )}
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
+          Semantic search
+        </h2>
+        <form
+          onSubmit={onSearchSubmit}
+          className="mt-4 flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/60"
+        >
+          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            Natural language query
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              type="text"
+              className="w-full rounded-md border border-neutral-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-neutral-700 dark:bg-neutral-900"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="e.g. find recent large transfers"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              Search
+            </button>
+          </div>
+          {searchState.error ? (
+            <p className="text-xs text-red-500">{searchState.error}</p>
+          ) : null}
+          {searchState.loading ? (
+            <p className="text-xs text-neutral-500">Searching…</p>
+          ) : null}
+        </form>
+        {searchRan && searchResults.length === 0 && !searchState.loading ? (
+          <p className="mt-3 text-sm text-neutral-500">
+            No semantic matches found for “{searchQuery.trim()}”.
+          </p>
+        ) : null}
+        {searchResults.length > 0 ? (
+          <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 shadow-sm dark:border-neutral-700">
+            <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-700">
+              <thead className="bg-neutral-50 dark:bg-neutral-900">
+                <tr>
+                  <Th>Timestamp</Th>
+                  <Th>From</Th>
+                  <Th>To</Th>
+                  <Th>Amount</Th>
+                  <Th>Symbol</Th>
+                  <Th>Similarity</Th>
+                  <Th>Tx hash</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 bg-white/60 dark:divide-neutral-800 dark:bg-neutral-900/60">
+                {searchResults.map((result) => (
+                  <tr key={result.id}>
+                    <Td className="whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                      {new Date(result.timestamp).toLocaleString()}
+                    </Td>
+                    <Td className="text-sm">{shortenAddress(result.from)}</Td>
+                    <Td className="text-sm">{shortenAddress(result.to)}</Td>
+                    <Td className="whitespace-nowrap text-sm text-neutral-700 dark:text-neutral-200">
+                      {result.amount}
+                    </Td>
+                    <Td className="text-sm">{result.symbol ?? "—"}</Td>
+                    <Td className="whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
+                      {result.score.toFixed(3)}
+                    </Td>
+                    <Td className="whitespace-nowrap text-xs text-blue-600 hover:underline">
+                      <a
+                        href={`${EXPLORER_BASE_URL}/tx/${result.txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {result.txHash.slice(0, 12)}…
+                      </a>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <section>

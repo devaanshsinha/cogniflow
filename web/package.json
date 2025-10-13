@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "generate": "prisma generate",
+    "generate": "prisma generate --schema ../prisma/schema.prisma",
     "migrate": "prisma migrate dev",
     "dev": "next dev",
     "build": "npm run generate && next build",

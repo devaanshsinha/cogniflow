@@ -130,6 +130,7 @@ export async function GET(request: Request) {
           amount_dec: Prisma.Decimal;
           symbol: string | null;
           chain: string;
+          token: string;
           meta: Prisma.JsonValue | null;
         }>
       >`
@@ -164,6 +165,7 @@ export async function GET(request: Request) {
           amount_dec: Prisma.Decimal;
           symbol: string | null;
           chain: string;
+          token: string;
           meta: Prisma.JsonValue | null;
         }>
       >`

@@ -48,6 +48,8 @@ function toEmbeddingPrompt(transfer: TransferForEmbedding): string {
   const amount = transfer.amountDec.toString();
   const timestamp = transfer.timestamp.toISOString();
 
+  const bucket = categorizeAmount(transfer.amountDec);
+
   return [
     `Transfer ${transfer.id}`,
     `Timestamp: ${timestamp}`,
@@ -55,10 +57,22 @@ function toEmbeddingPrompt(transfer: TransferForEmbedding): string {
     `Token: ${transfer.token}`,
     `Symbol: ${symbol}`,
     `Amount: ${amount}`,
+    `Amount bucket: ${bucket}`,
     `From: ${transfer.fromAddr}`,
     `To: ${transfer.toAddr}`,
     `TxHash: ${transfer.txHash}`,
   ].join("\n");
+}
+
+function categorizeAmount(amount: Prisma.Decimal): string {
+  const value = Number(amount.toString());
+  if (!Number.isFinite(value)) return "unknown";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return "very large";
+  if (abs >= 100_000) return "large";
+  if (abs >= 10_000) return "medium";
+  if (abs >= 1_000) return "small";
+  return "very small";
 }
 
 async function fetchEmbeddings(texts: string[]): Promise<number[][]> {

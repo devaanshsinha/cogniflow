@@ -53,25 +53,42 @@ export async function GET(request: Request) {
     const limit = Math.min(Math.max(parsed.data.limit ?? 10, 1), 25);
     const embedding = await getQueryEmbedding(parsed.data.q);
     const vectorSql = embeddingToSql(embedding);
-    const addressCondition = parsed.data.address
-      ? Prisma.sql`AND (t."from_addr" = ${parsed.data.address} OR t."to_addr" = ${parsed.data.address})`
-      : Prisma.empty;
 
-    const rows = await prisma.$queryRaw<
-      Array<{
-        id: string;
-        score: number;
-        timestamp: Date;
-        tx_hash: string;
-        from_addr: string;
-        to_addr: string;
-        amount_dec: Prisma.Decimal;
-        symbol: string | null;
-        chain: string;
-        meta: Prisma.JsonValue | null;
-      }>
-    >(
-      Prisma.sql`
+    const queryLower = parsed.data.q.toLowerCase();
+    const wantsLarge = /\b(biggest|largest|large|high|huge|massive|million|billions|big|heavy|volume|value|usd)\b/.test(
+      queryLower,
+    );
+
+    let rows:
+      | Array<{
+          id: string;
+          score: number;
+          timestamp: Date;
+          tx_hash: string;
+          from_addr: string;
+          to_addr: string;
+          amount_dec: Prisma.Decimal;
+          symbol: string | null;
+          chain: string;
+          meta: Prisma.JsonValue | null;
+        }>
+      | null = null;
+
+    if (parsed.data.address) {
+      rows = await prisma.$queryRaw<
+        Array<{
+          id: string;
+          score: number;
+          timestamp: Date;
+          tx_hash: string;
+          from_addr: string;
+          to_addr: string;
+          amount_dec: Prisma.Decimal;
+          symbol: string | null;
+          chain: string;
+          meta: Prisma.JsonValue | null;
+        }>
+      >`
         SELECT
           te.id,
           1 - (te.embedding <=> ${vectorSql}) AS score,
@@ -86,11 +103,57 @@ export async function GET(request: Request) {
         FROM "tx_embeddings" te
         JOIN "transfers" t ON t."id" = te."id"
         WHERE t."chain" = ${parsed.data.chain}
-          ${addressCondition}
+          AND (t."from_addr" = ${parsed.data.address} OR t."to_addr" = ${parsed.data.address})
         ORDER BY te.embedding <=> ${vectorSql}
         LIMIT ${limit}
-      `,
-    );
+      `;
+    } else {
+      rows = await prisma.$queryRaw<
+        Array<{
+          id: string;
+          score: number;
+          timestamp: Date;
+          tx_hash: string;
+          from_addr: string;
+          to_addr: string;
+          amount_dec: Prisma.Decimal;
+          symbol: string | null;
+          chain: string;
+          meta: Prisma.JsonValue | null;
+        }>
+      >`
+        SELECT
+          te.id,
+          1 - (te.embedding <=> ${vectorSql}) AS score,
+          t."timestamp",
+          t."tx_hash",
+          t."from_addr",
+          t."to_addr",
+          t."amount_dec",
+          t."symbol",
+          t."chain",
+          te."meta"
+        FROM "tx_embeddings" te
+        JOIN "transfers" t ON t."id" = te."id"
+        WHERE t."chain" = ${parsed.data.chain}
+        ORDER BY te.embedding <=> ${vectorSql}
+        LIMIT ${limit}
+      `;
+    }
+
+    if (wantsLarge) {
+      rows = rows
+        .slice()
+        .sort((a, b) => {
+          const aAmount = Math.abs(Number(a.amount_dec.toString()));
+          const bAmount = Math.abs(Number(b.amount_dec.toString()));
+          if (bAmount === aAmount) {
+            return b.score - a.score;
+          }
+          return bAmount - aAmount;
+        })
+        .slice(0, limit);
+    }
     const data = rows.map((row) => ({
       id: row.id,
       score: row.score,

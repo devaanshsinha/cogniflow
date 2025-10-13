@@ -1,6 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 type PortfolioResponse = {
   status: "ok";
@@ -85,27 +104,46 @@ const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
 const EXPLORER_BASE_URL =
   process.env.NEXT_PUBLIC_ETHERSCAN_BASE_URL ?? "https://etherscan.io";
 
-function formatNumber(value: number | string, maximumFractionDigits = 2) {
+const compactFormatter = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+const preciseFormatter = new Intl.NumberFormat("en", {
+  maximumFractionDigits: 2,
+});
+
+function formatCompact(value: number | string) {
   const numeric = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(numeric)) return "—";
-  return numeric.toLocaleString(undefined, {
-    maximumFractionDigits,
-  });
+  if (!Number.isFinite(numeric)) return "—";
+  if (Math.abs(numeric) < 1000) {
+    return preciseFormatter.format(numeric);
+  }
+  return compactFormatter.format(numeric);
 }
 
-function formatUsd(value: string | null) {
-  if (!value) return "—";
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return "—";
-  return `$${numeric.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+function formatUsd(value: string | number | null) {
+  if (value == null) return "—";
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return "—";
+  const absolute = Math.abs(numeric);
+  const formatted =
+    absolute >= 1000
+      ? compactFormatter.format(numeric)
+      : preciseFormatter.format(numeric);
+  return numeric >= 0 ? `$${formatted}` : `- $${formatted.replace("-", "")}`;
 }
 
-function shortenAddress(value: string, length = 10) {
-  if (value.length <= length) return value;
-  return `${value.slice(0, length)}…`;
+function shortenAddress(address: string, length = 8) {
+  if (!address) return "—";
+  return `${address.slice(0, length)}…${address.slice(-4)}`;
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toLocaleString();
 }
 
 export function Dashboard(): JSX.Element {
@@ -119,71 +157,68 @@ export function Dashboard(): JSX.Element {
     loading: false,
     error: null,
   });
-  const [portfolio, setPortfolio] = useState<PortfolioResponse["data"] | null>(
-    null
-  );
-  const [transfers, setTransfers] = useState<
-    TransfersResponse["data"]
-  >([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [transfersHasMore, setTransfersHasMore] = useState(false);
   const [searchState, setSearchState] = useState<FetchState>({
     loading: false,
     error: null,
   });
-  const [searchResults, setSearchResults] = useState<
-    SearchResponse["data"]
-  >([]);
+
+  const [portfolio, setPortfolio] =
+    useState<PortfolioResponse["data"] | null>(null);
+  const [transfers, setTransfers] = useState<TransfersResponse["data"]>([]);
+  const [searchResults, setSearchResults] =
+    useState<SearchResponse["data"]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchRan, setSearchRan] = useState(false);
 
-  const refreshData = useCallback(
-    async (nextAddress: string) => {
-      const normalized = nextAddress.trim().toLowerCase();
-      if (!normalized) {
-        setPortfolio(null);
-        setTransfers([]);
-        setSearchResults([]);
-        setSearchState({ loading: false, error: null });
-        setSearchRan(false);
-        return;
+  const refreshData = useCallback(async (nextAddress: string) => {
+    const normalized = nextAddress.trim().toLowerCase();
+    if (!normalized) {
+      setPortfolio(null);
+      setTransfers([]);
+      setTransfersHasMore(false);
+      setSearchResults([]);
+      setSearchState({ loading: false, error: null });
+      setSearchRan(false);
+      return;
+    }
+
+    setPortfolioState({ loading: true, error: null });
+    setTransfersState({ loading: true, error: null });
+
+    try {
+      const [portfolioRes, transfersRes] = await Promise.all([
+        fetch(`/api/portfolio?address=${normalized}`),
+        fetch(`/api/transfers?address=${normalized}&limit=25`),
+      ]);
+
+      if (!portfolioRes.ok) {
+        const body = await portfolioRes.json().catch(() => ({}));
+        throw new Error(body?.message ?? "Failed to load portfolio");
+      }
+      if (!transfersRes.ok) {
+        const body = await transfersRes.json().catch(() => ({}));
+        throw new Error(body?.message ?? "Failed to load transfers");
       }
 
-      setPortfolioState({ loading: true, error: null });
-      setTransfersState({ loading: true, error: null });
+      const portfolioJson = (await portfolioRes.json()) as PortfolioResponse;
+      const transfersJson = (await transfersRes.json()) as TransfersResponse;
 
-      try {
-        const [portfolioRes, transfersRes] = await Promise.all([
-          fetch(`/api/portfolio?address=${normalized}`),
-          fetch(`/api/transfers?address=${normalized}&limit=25`),
-        ]);
-
-        if (!portfolioRes.ok) {
-          const body = await portfolioRes.json().catch(() => ({}));
-          throw new Error(body?.message ?? "Failed to load portfolio");
-        }
-        if (!transfersRes.ok) {
-          const body = await transfersRes.json().catch(() => ({}));
-          throw new Error(body?.message ?? "Failed to load transfers");
-        }
-
-        const portfolioJson = (await portfolioRes.json()) as PortfolioResponse;
-        const transfersJson = (await transfersRes.json()) as TransfersResponse;
-
-        setPortfolio(portfolioJson.data);
-        setTransfers(transfersJson.data);
-        setSearchResults([]);
-        setSearchState({ loading: false, error: null });
-        setSearchRan(false);
-        setPortfolioState({ loading: false, error: null });
-        setTransfersState({ loading: false, error: null });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unexpected error";
-        setPortfolioState({ loading: false, error: message });
-        setTransfersState({ loading: false, error: message });
-      }
-    },
-    []
-  );
+      setPortfolio(portfolioJson.data);
+      setTransfers(transfersJson.data);
+       setTransfersHasMore(transfersJson.hasMore);
+      setPortfolioState({ loading: false, error: null });
+      setTransfersState({ loading: false, error: null });
+      setSearchResults([]);
+      setSearchState({ loading: false, error: null });
+      setSearchRan(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unexpected error";
+      setPortfolioState({ loading: false, error: message });
+      setTransfersState({ loading: false, error: message });
+    }
+  }, []);
 
   const onSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
@@ -191,65 +226,12 @@ export function Dashboard(): JSX.Element {
       setAddress(pendingAddress);
       void refreshData(pendingAddress);
     },
-    [pendingAddress, refreshData]
+    [pendingAddress, refreshData],
   );
 
   useEffect(() => {
     void refreshData(address);
   }, [address, refreshData]);
-
-  const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
-  const valuations = portfolio?.valuations ?? null;
-  const sync = portfolio?.sync ?? null;
-  const syncDisplay = useMemo(() => {
-    if (!sync) {
-      return { blockLabel: "—", timeLabel: "Waiting for first sync…" };
-    }
-    const blockLabel =
-      typeof sync.lastSyncedBlock === "number"
-        ? `#${sync.lastSyncedBlock}`
-        : "—";
-    const timeLabel = sync.lastSyncedAt
-      ? `Updated ${new Date(sync.lastSyncedAt).toLocaleString()}`
-      : "Sync pending";
-    return { blockLabel, timeLabel };
-  }, [sync]);
-
-  const summaryItems = useMemo(() => {
-    if (!portfolio) return [];
-    const items = [
-      {
-        label: "Total transfers",
-        value: formatNumber(portfolio.totals.transfers, 0),
-      },
-      {
-        label: "Incoming",
-        value: formatNumber(portfolio.totals.incomingTransfers, 0),
-      },
-      {
-        label: "Outgoing",
-        value: formatNumber(portfolio.totals.outgoingTransfers, 0),
-      },
-      {
-        label: "Counterparties",
-        value: formatNumber(portfolio.totals.counterparties, 0),
-      },
-    ];
-
-    if (valuations) {
-      items.push({ label: "Net USD", value: formatUsd(valuations.netUsd) });
-      items.push({
-        label: "Incoming USD",
-        value: formatUsd(valuations.incomingUsd),
-      });
-      items.push({
-        label: "Outgoing USD",
-        value: formatUsd(valuations.outgoingUsd),
-      });
-    }
-
-    return items;
-  }, [portfolio, valuations]);
 
   const onSearchSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -261,28 +243,24 @@ export function Dashboard(): JSX.Element {
         setSearchRan(false);
         return;
       }
+
       setSearchState({ loading: true, error: null });
       try {
-        const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&address=${address}`
-        );
+        const normalizedAddress = address.trim().toLowerCase();
+        const params = new URLSearchParams({ q: query });
+        const chain = portfolio?.chain ?? "eth";
+        params.set("chain", chain);
+        if (normalizedAddress.match(/^0x[a-f0-9]{40}$/i)) {
+          params.set("address", normalizedAddress);
+        }
+
+        const response = await fetch(`/api/search?${params.toString()}`);
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
           throw new Error(body?.message ?? "Failed to run search");
         }
         const json = (await response.json()) as SearchResponse;
-        const normalized = json.data.map((row) => ({
-          id: row.id,
-          score: row.score,
-          timestamp: row.timestamp,
-          txHash: row.txHash,
-          from: row.from,
-          to: row.to,
-          amount: row.amount,
-          symbol: row.symbol,
-          chain: row.chain,
-        }));
-        setSearchResults(normalized);
+        setSearchResults(json.data);
         setSearchState({ loading: false, error: null });
         setSearchRan(true);
       } catch (error) {
@@ -292,328 +270,397 @@ export function Dashboard(): JSX.Element {
         setSearchRan(false);
       }
     },
-    [searchQuery, address]
+    [searchQuery, address, portfolio?.chain],
   );
 
+  const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
+  const valuations = portfolio?.valuations ?? null;
+  const sync = portfolio?.sync ?? null;
+
+  const syncDisplay = useMemo(() => {
+    if (!sync) {
+      return { blockLabel: "—", timeLabel: "Waiting for first sync…" };
+    }
+    const blockLabel =
+      typeof sync.lastSyncedBlock === "number"
+        ? `#${sync.lastSyncedBlock.toLocaleString()}`
+        : "—";
+    const timeLabel = sync.lastSyncedAt
+      ? `Updated ${new Date(sync.lastSyncedAt).toLocaleString()}`
+      : "Sync pending";
+    return { blockLabel, timeLabel };
+  }, [sync]);
+
+  const summaryItems = useMemo(() => {
+    if (!portfolio) return [];
+    return [
+      {
+        label: "Total transfers",
+        value: formatCompact(portfolio.totals.transfers),
+        caption: "All movements during the selected window",
+      },
+      {
+        label: "Incoming transfers",
+        value: formatCompact(portfolio.totals.incomingTransfers),
+        caption: "Credits received",
+      },
+      {
+        label: "Outgoing transfers",
+        value: formatCompact(portfolio.totals.outgoingTransfers),
+        caption: "Debits sent",
+      },
+      {
+        label: "Unique counterparties",
+        value: formatCompact(portfolio.totals.counterparties),
+        caption: "Distinct addresses interacted with",
+      },
+      valuations && {
+        label: "Net USD",
+        value: formatUsd(valuations.netUsd),
+        caption: "Incoming minus outgoing (priced)",
+      },
+      valuations && {
+        label: "Incoming USD",
+        value: formatUsd(valuations.incomingUsd),
+        caption: "Priced value of credits",
+      },
+      valuations && {
+        label: "Outgoing USD",
+        value: formatUsd(valuations.outgoingUsd),
+        caption: "Priced value of debits",
+      },
+    ].filter(Boolean) as Array<{
+      label: string;
+      value: string;
+      caption: string;
+    }>;
+  }, [portfolio, valuations]);
+
+  const topHoldings = useMemo(() => {
+    return holdings
+      .slice()
+      .sort(
+        (a, b) => Number(b.netUsd ?? b.net ?? 0) - Number(a.netUsd ?? a.net ?? 0),
+      );
+  }, [holdings]);
+
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 py-10">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Cogniflow Dashboard
-        </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          Track wallet activity, balances, and transfers. Data updates when you
-          change the address below.
-        </p>
-        <form
-          onSubmit={onSubmit}
-          className="mt-4 flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/60"
-        >
-          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            Wallet address
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              className="w-full rounded-md border border-neutral-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-neutral-700 dark:bg-neutral-900"
-              value={pendingAddress}
-              onChange={(event) => setPendingAddress(event.target.value)}
-              placeholder="0x..."
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            >
-              Load data
-            </button>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 pb-16 pt-12 sm:px-8">
+      <section className="grid gap-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-700 p-8 text-white shadow-xl dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-800">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-neutral-300">
+              Cogniflow
+            </span>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Wallet intelligence at production scale
+            </h1>
+            <p className="max-w-xl text-sm text-neutral-400 sm:text-base">
+              Connect an address, refresh the ledger, and interrogate on-chain
+              activity with deterministic tools and semantic search.
+            </p>
           </div>
-        </form>
-      </header>
+          <form
+            onSubmit={onSubmit}
+            className="flex w-full max-w-lg flex-col gap-3 sm:flex-row sm:items-center"
+          >
+            <div className="flex-1">
+              <Input
+                value={pendingAddress}
+                onChange={(event) => setPendingAddress(event.target.value)}
+                placeholder="0x…"
+                className="border-white/20 bg-white/10 text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/30"
+              />
+            </div>
+            <Button type="submit" variant="secondary">
+              Load activity
+            </Button>
+          </form>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-300">
+          <Badge variant="outline" className="border-white/20 text-white">
+            Chain: {portfolio?.chain ?? "eth"}
+          </Badge>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-white">Sync:</span>
+            <span>{syncDisplay.blockLabel}</span>
+            <span className="text-neutral-400">·</span>
+            <span>{syncDisplay.timeLabel}</span>
+          </div>
+        </div>
+      </section>
 
-      <section>
-        <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          Overview ({portfolio?.chain ?? "eth"})
-        </h2>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-          Sync status: block {syncDisplay.blockLabel} · {syncDisplay.timeLabel}
-        </p>
-        {portfolioState.loading ? (
-          <p className="mt-3 text-sm text-neutral-500">Loading portfolio…</p>
-        ) : portfolioState.error ? (
-          <p className="mt-3 text-sm text-red-500">
-            {portfolioState.error}. Try again.
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {summaryItems.length === 0 && portfolioState.loading ? (
+          <p className="text-sm text-neutral-500">Loading summary…</p>
+        ) : summaryItems.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Enter an address to see portfolio insights.
           </p>
-        ) : portfolio ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-            {summaryItems.map((item) => (
-              <SummaryCard key={item.label} label={item.label} value={item.value} />
-            ))}
-          </div>
         ) : (
-          <p className="mt-3 text-sm text-neutral-500">
-            Enter an address to see portfolio stats.
-          </p>
+          summaryItems.map((item) => (
+            <Card key={item.label} className="border-neutral-100 dark:border-neutral-800">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-xs uppercase tracking-[0.25em]">
+                  {item.label}
+                </CardDescription>
+                <CardTitle className="text-2xl text-neutral-900 dark:text-neutral-50">
+                  {item.value}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {item.caption}
+                </p>
+              </CardContent>
+            </Card>
+          ))
         )}
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          Semantic search
-        </h2>
-        <form
-          onSubmit={onSearchSubmit}
-          className="mt-4 flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/60"
-        >
-          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            Natural language query
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              className="w-full rounded-md border border-neutral-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-neutral-700 dark:bg-neutral-900"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="e.g. find recent large transfers"
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            >
-              Search
-            </button>
-          </div>
-          {searchState.error ? (
-            <p className="text-xs text-red-500">{searchState.error}</p>
-          ) : null}
-          {searchState.loading ? (
-            <p className="text-xs text-neutral-500">Searching…</p>
-          ) : null}
-        </form>
-        {searchRan && searchResults.length === 0 && !searchState.loading ? (
-          <p className="mt-3 text-sm text-neutral-500">
-            No semantic matches found for “{searchQuery.trim()}”.
-          </p>
-        ) : null}
-        {searchResults.length > 0 ? (
-          <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 shadow-sm dark:border-neutral-700">
-            <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-700">
-              <thead className="bg-neutral-50 dark:bg-neutral-900">
-                <tr>
-                  <Th>Timestamp</Th>
-                  <Th>From</Th>
-                  <Th>To</Th>
-                  <Th>Amount</Th>
-                  <Th>Symbol</Th>
-                  <Th>Similarity</Th>
-                  <Th>Tx hash</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200 bg-white/60 dark:divide-neutral-800 dark:bg-neutral-900/60">
-                {searchResults.map((result) => (
-                  <tr key={result.id}>
-                    <Td className="whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                      {new Date(result.timestamp).toLocaleString()}
-                    </Td>
-                    <Td className="text-sm">{shortenAddress(result.from)}</Td>
-                    <Td className="text-sm">{shortenAddress(result.to)}</Td>
-                    <Td className="whitespace-nowrap text-sm text-neutral-700 dark:text-neutral-200">
-                      {result.amount}
-                    </Td>
-                    <Td className="text-sm">{result.symbol ?? "—"}</Td>
-                    <Td className="whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                      {result.score.toFixed(3)}
-                    </Td>
-                    <Td className="whitespace-nowrap text-xs text-blue-600 hover:underline">
-                      <a
-                        href={`${EXPLORER_BASE_URL}/tx/${result.txHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {result.txHash.slice(0, 12)}…
-                      </a>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          Top tokens (net)
-        </h2>
-        {holdings.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-500">
-            No holdings found in the selected window.
-          </p>
-        ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {holdings.map((holding) => (
-              <div
-                key={holding.token}
-                className="rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60"
-              >
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-neutral-600 dark:text-neutral-300">
-                    {holding.symbol ?? "Unknown"}
-                  </p>
-                  <p className="text-xs text-neutral-400">
-                    {holding.token.slice(0, 10)}…
-                  </p>
-                </div>
-                <p className="mt-3 text-2xl font-semibold tracking-tight">
-                  {formatNumber(holding.net, 4)}
-                </p>
-                <p className="text-sm text-neutral-500">
-                  {holding.netUsd ? formatUsd(holding.netUsd) : "USD price unavailable"}
-                </p>
-                <p className="mt-2 text-xs text-neutral-500">
-                  Incoming {holding.incoming} ({holding.incomingUsd ? formatUsd(holding.incomingUsd) : "—"})
-                </p>
-                <p className="text-xs text-neutral-500">
-                  Outgoing {holding.outgoing} ({holding.outgoingUsd ? formatUsd(holding.outgoingUsd) : "—"})
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.35em] text-neutral-500">
-                  <span className="rounded-full border border-neutral-200 bg-green-50 px-3 py-1 text-green-600">
-                    In {holding.incoming}
-                  </span>
-                  <span className="rounded-full border border-neutral-200 bg-amber-50 px-3 py-1 text-amber-600">
-                    Out {holding.outgoing}
-                  </span>
-                </div>
-                {holding.priceUsd ? (
-                  <p className="mt-3 text-xs text-neutral-400">
-                    Price {formatUsd(holding.priceUsd)}
-                    {holding.priceTimestamp
-                      ? ` · ${new Date(holding.priceTimestamp).toLocaleTimeString()}`
-                      : ""}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          Latest transfers
-        </h2>
-        {transfersState.loading ? (
-          <p className="mt-3 text-sm text-neutral-500">Loading transfers…</p>
-        ) : transfersState.error ? (
-          <p className="mt-3 text-sm text-red-500">
-            {transfersState.error}. Try again.
-          </p>
-        ) : transfers.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-500">
-            No transfers found for this range.
-          </p>
-        ) : (
-          <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 shadow-sm dark:border-neutral-700">
-            <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-700">
-              <thead className="bg-neutral-50 dark:bg-neutral-900">
-                <tr>
-                  <Th>Timestamp</Th>
-                  <Th>Token</Th>
-                  <Th>Direction</Th>
-                  <Th>Amount</Th>
-                  <Th>Tx hash</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200 bg-white/60 dark:divide-neutral-800 dark:bg-neutral-900/60">
-                {transfers.map((transfer) => {
+      <section className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Latest transfers</CardTitle>
+            <CardDescription>
+              Most recent activity limited to 25 rows (freshest at the top).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {transfersState.loading ? (
+              <p className="text-sm text-neutral-500">Loading transfers…</p>
+            ) : transfers.length === 0 ? (
+              <p className="text-sm text-neutral-500">
+                No transfers found for this range.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {transfers.slice(0, 10).map((transfer) => {
                   const isIncoming =
                     transfer.to.toLowerCase() === address.toLowerCase();
                   return (
-                    <tr key={transfer.id}>
-                      <Td className="whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-300">
-                        {new Date(transfer.timestamp).toLocaleString()}
-                      </Td>
-                      <Td className="text-sm">
-                        <span className="font-medium text-neutral-800 dark:text-neutral-100">
-                          {transfer.symbol ?? "Unknown"}
-                        </span>
-                        <span className="block text-xs text-neutral-400">
-                          {transfer.token.slice(0, 10)}…
-                        </span>
-                      </Td>
-                      <Td className="whitespace-nowrap text-sm">
-                        <span
-                          className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                            isIncoming
-                              ? "bg-green-100 text-green-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
+                    <div
+                      key={transfer.id}
+                      className="rounded-2xl border border-neutral-200 bg-white/80 p-4 shadow-sm transition hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900/50"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-50">
+                            {transfer.symbol ?? "Unknown"}
+                          </p>
+                          <p className="text-xs text-neutral-500">
+                            {new Date(transfer.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                        <Badge variant={isIncoming ? "success" : "warning"}>
                           {isIncoming ? "Incoming" : "Outgoing"}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-neutral-400">
+                        <span className="truncate" title={transfer.from}>
+                          {shortenAddress(transfer.from, 12)}
                         </span>
-                      </Td>
-                      <Td className="whitespace-nowrap text-sm text-neutral-700 dark:text-neutral-200">
-                        {Number(transfer.amount).toLocaleString(undefined, {
-                          maximumFractionDigits: 6,
-                        })}
-                      </Td>
-                      <Td className="whitespace-nowrap text-xs text-blue-600 hover:underline">
+                        <span className="text-center text-neutral-500">→</span>
+                        <span className="text-right" title={transfer.to}>
+                          {shortenAddress(transfer.to, 12)}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-sm text-neutral-600 dark:text-neutral-200">
+                        <span>{transfer.amount}</span>
                         <a
                           href={`${EXPLORER_BASE_URL}/tx/${transfer.txHash}`}
                           target="_blank"
                           rel="noreferrer"
+                          className="text-xs font-medium text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300"
                         >
-                          {transfer.txHash.slice(0, 12)}…
+                          {transfer.txHash.slice(0, 10)}…
                         </a>
-                      </Td>
-                    </tr>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                {transfersHasMore && (
+                  <p className="text-xs text-neutral-400">
+                    More transfers available via the API.
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top holdings</CardTitle>
+            <CardDescription>
+              Net token positions ranked by priced value (or token units when no
+              quote is available).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {portfolioState.loading ? (
+              <p className="text-sm text-neutral-500">Loading holdings…</p>
+            ) : topHoldings.length === 0 ? (
+              <p className="text-sm text-neutral-500">
+                No holdings found in the selected window.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {topHoldings.slice(0, 5).map((holding) => {
+                  const netUsd = holding.netUsd
+                    ? Number(holding.netUsd)
+                    : Number(holding.net);
+                  const positive = netUsd >= 0;
+                  const spotPrice = holding.priceUsd
+                    ? formatUsd(holding.priceUsd)
+                    : null;
+                  const spotTimestamp = formatTimestamp(holding.priceTimestamp);
+                  return (
+                    <div
+                      key={holding.token}
+                      className={cn(
+                        "rounded-2xl border border-neutral-200 bg-white/80 p-4 transition hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900/50",
+                        positive
+                          ? "border-emerald-100/70 dark:border-emerald-900/40"
+                          : "border-amber-100/70 dark:border-amber-900/40",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                            {holding.symbol ?? "Unknown"}
+                          </p>
+                          <p className="text-xs text-neutral-400">
+                            {shortenAddress(holding.token, 12)}
+                          </p>
+                        </div>
+                        <Badge variant={positive ? "success" : "warning"}>
+                          {positive ? "Net long" : "Net out"}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        <div className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
+                          {formatCompact(holding.net)}
+                        </div>
+                        <p className="text-sm text-neutral-500">
+                          {formatCompact(holding.incoming)} in · {formatCompact(holding.outgoing)} out
+                        </p>
+                        {spotPrice ? (
+                          <p className="text-xs text-neutral-400">
+                            Spot {spotPrice}
+                            {spotTimestamp ? ` · ${spotTimestamp}` : ""}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-neutral-400">
+                            No recent spot price
+                          </p>
+                        )}
+                        <p className="text-xs text-neutral-400">
+                          {holding.netUsd
+                            ? `Priced net ${formatUsd(holding.netUsd)}`
+                            : "Net position valued from token balance"}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Semantic search</CardTitle>
+            <CardDescription>
+              Ask for patterns in natural language. Results are ranked using
+              OpenAI embeddings and pgvector similarity.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              onSubmit={onSearchSubmit}
+              className="flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white/80 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50 sm:flex-row sm:items-center"
+            >
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Find multi-million inflows last month"
+                className="flex-1"
+              />
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={searchState.loading}>
+                  {searchState.loading ? "Searching…" : "Search"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setSearchState({ loading: false, error: null });
+                    setSearchRan(false);
+                  }}
+                >
+                  Clear
+                </Button>
+              </div>
+            </form>
+            {searchState.error && (
+              <p className="text-sm text-red-500">{searchState.error}</p>
+            )}
+            {searchRan && searchResults.length === 0 && !searchState.loading ? (
+              <p className="text-sm text-neutral-500">
+                No semantic matches found. Try refining the query or widening the
+                timeframe.
+              </p>
+            ) : null}
+            {searchResults.length > 0 ? (
+              <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-neutral-100/70 dark:bg-neutral-900/60">
+                      <TableHead>Timestamp</TableHead>
+                      <TableHead>From</TableHead>
+                      <TableHead>To</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>Similarity</TableHead>
+                      <TableHead>Tx hash</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {searchResults.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          {new Date(row.timestamp).toLocaleString()}
+                        </TableCell>
+                        <TableCell>{shortenAddress(row.from, 12)}</TableCell>
+                        <TableCell>{shortenAddress(row.to, 12)}</TableCell>
+                        <TableCell>{row.amount}</TableCell>
+                        <TableCell>{row.symbol ?? "—"}</TableCell>
+                        <TableCell>{row.score.toFixed(3)}</TableCell>
+                        <TableCell>
+                          <a
+                            href={`${EXPLORER_BASE_URL}/tx/${row.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300"
+                          >
+                            {row.txHash.slice(0, 12)}…
+                          </a>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
 }
-
-function SummaryCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}): JSX.Element {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white/60 p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60">
-      <p className="text-sm text-neutral-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function Th({
-  children,
-}: {
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}): JSX.Element {
-  return <td className={`px-4 py-3 ${className ?? ""}`}>{children}</td>;
-}
-
-export default Dashboard;

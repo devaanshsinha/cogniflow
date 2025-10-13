@@ -144,7 +144,7 @@ Run from repository root (dotenv config required):
 
 - **Data:** Ingestion tested against Sepolia and mainnet addresses (e.g. `0x7116…e74c`). Transfers, prices, embeddings populate successfully.
 - **APIs:** `/api/transfers`, `/api/portfolio`, `/api/search`, `/tool/sql`, `/api/chat` are live and returning enriched data.
-- **UI:** Dashboard renders real wallets, holdings cards display price info, and the chat panel calls `/api/chat` to display answers (including tables, sources, and chart placeholders). Direct semantic search is exposed via the API and leveraged by the chat flow.
+- **UI:** Dashboard renders real wallets, holdings cards display price info, the chat panel calls `/api/chat` to display answers (including tables, sources, and chart placeholders), and users authenticate via dedicated `/signin` and `/signup` flows (email/password or Google OAuth) before accessing data. Direct semantic search is exposed via the API and leveraged by the chat flow.
 - **LLM tooling:** Deterministic endpoints ready; full chat orchestration (agent / UI conversation) still to be finalized.
 - **Deployment:** Not yet deployed. Web app is Vercel-ready; worker & jobs need cron/runner (e.g. Vercel cron hitting an ingestion endpoint or a sidecar process).
 
@@ -154,6 +154,7 @@ Run from repository root (dotenv config required):
    - Deploy web to Vercel (set env vars).
    - Host worker (cron, Render, Supabase Edge Function, etc.) to run ingestion/price/embedding jobs.
    - Optionally add monitoring/log aggregation.
+   - Convert ingestion/price/embedding scripts into HTTP-triggered endpoints or queue-backed jobs so they can be driven by Vercel Cron/GitHub Actions instead of manual execution.
 2. **Chat & UI Enhancements**
    - Build chat interface in the dashboard that consumes `/api/chat`.
    - Add support for more named queries (top tokens, gas analysis, net positions in USD).
@@ -207,6 +208,8 @@ Run from repository root (dotenv config required):
 - **web/components/providers/supabase-provider.tsx** – wraps the app with Supabase session context.
 - **web/components/dashboard.tsx** – entire dashboard UI (address form, cards, tables, search).
 - **web/components/ui/** – reusable shadcn-style components.
+- **web/app/signin/page.tsx, web/app/signup/page.tsx** – standalone authentication views.
+- **Deployment / Cron** – plan to deploy the web app to Vercel with scheduled jobs for worker scripts (prices, embeddings, ingestion) via Vercel Cron or external scheduler hitting secure API routes.
 
 ---
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
 import {
   Card,
@@ -167,12 +168,9 @@ function formatTimestamp(value: string | null) {
 
 export function Dashboard(): JSX.Element {
   const session = useSession();
+  const router = useRouter();
   const supabase = useSupabaseClient();
 
-  const [authEmail, setAuthEmail] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
 
   const [address, setAddress] = useState(DEMO_ADDRESS);
   const [pendingAddress, setPendingAddress] = useState(DEMO_ADDRESS);
@@ -184,6 +182,7 @@ export function Dashboard(): JSX.Element {
     loading: false,
     error: null,
   });
+  const [signOutLoading, setSignOutLoading] = useState(false);
   const [transfersHasMore, setTransfersHasMore] = useState(false);
   const [portfolio, setPortfolio] =
     useState<PortfolioResponse["data"] | null>(null);
@@ -373,56 +372,6 @@ export function Dashboard(): JSX.Element {
     [chatInput, address, portfolio?.chain, chatMessages, session],
   );
 
-  const handleEmailSignIn = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setAuthError(null);
-      setAuthMessage(null);
-      const email = authEmail.trim();
-      if (!email) {
-        setAuthError("Enter a valid email address.");
-        return;
-      }
-
-      setAuthLoading(true);
-      const redirectTo =
-        typeof window !== "undefined" ? window.location.origin : undefined;
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: redirectTo,
-        },
-      });
-      if (error) {
-        setAuthError(error.message);
-      } else {
-        setAuthMessage("Check your email for the login link.");
-        setAuthEmail("");
-      }
-      setAuthLoading(false);
-    },
-    [authEmail, supabase],
-  );
-
-  const handleOAuthSignIn = useCallback(async () => {
-    setAuthError(null);
-    setAuthMessage(null);
-    setAuthLoading(true);
-    const origin =
-      typeof window !== "undefined" ? window.location.origin : undefined;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: {
-        redirectTo: origin,
-      },
-    });
-    if (error) {
-      setAuthError(error.message);
-      setAuthLoading(false);
-    }
-    // On success, Supabase will redirect; no further action needed.
-  }, [supabase]);
-
   const clearChat = useCallback(() => {
     setChatMessages([]);
     setChatTurns([]);
@@ -431,15 +380,16 @@ export function Dashboard(): JSX.Element {
   }, []);
 
   const handleSignOut = useCallback(async () => {
-    setAuthError(null);
-    setAuthMessage(null);
-    setAuthLoading(true);
+    setSignOutLoading(true);
     const { error } = await supabase.auth.signOut();
+    setSignOutLoading(false);
     if (error) {
-      setAuthError(error.message);
+      console.error("Failed to sign out", error.message);
+      return;
     }
-    setAuthLoading(false);
-  }, [supabase]);
+    router.replace("/signin");
+    router.refresh();
+  }, [router, supabase]);
 
   useEffect(() => {
     if (session) {
@@ -530,86 +480,7 @@ export function Dashboard(): JSX.Element {
   }, [holdings]);
 
   if (!session) {
-    return (
-      <div className="min-h-screen bg-neutral-100 bg-gradient-to-br from-neutral-200 via-neutral-100 to-neutral-200 px-6 py-16 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-900 sm:px-10">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 rounded-3xl border border-white/30 bg-white/70 px-8 py-10 shadow-2xl backdrop-blur dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:shadow-neutral-950/40 sm:px-12 md:flex-row md:items-start">
-          <div className="flex-1 space-y-4">
-            <Badge variant="outline" className="border-neutral-400/50 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
-              Cogniflow Access
-            </Badge>
-            <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-4xl">
-              Sign in to unlock wallet intelligence
-            </h1>
-            <p className="max-w-xl text-sm text-neutral-600 dark:text-neutral-400 sm:text-base">
-              Use a magic link or GitHub OAuth to access real-time analytics, chat insights, and semantic search across your on-chain activity. We only need your email to deliver the secure login link.
-            </p>
-            <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
-              <li>• One-click magic links, valid for a short time.</li>
-              <li>• GitHub OAuth for faster sign-ins.</li>
-              <li>• Sessions persist across refreshes until you sign out.</li>
-            </ul>
-          </div>
-          <Card className="w-full max-w-sm border-neutral-200/70 bg-white/90 shadow-lg dark:border-neutral-800 dark:bg-neutral-900/80">
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-lg font-semibold">
-                Continue to Cogniflow
-              </CardTitle>
-              <CardDescription className="text-sm">
-                Magic link recommended for quick, passwordless access.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <form className="space-y-3" onSubmit={handleEmailSignIn}>
-                <label className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500 dark:text-neutral-400">
-                  Email address
-                </label>
-                <Input
-                  type="email"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  disabled={authLoading}
-                  required
-                  className="bg-white/90 dark:bg-neutral-900/70"
-                />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={authLoading}
-                >
-                  {authLoading ? "Sending…" : "Send magic link"}
-                </Button>
-              </form>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-neutral-400">
-                  <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-                  <span>or</span>
-                  <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
-                  onClick={handleOAuthSignIn}
-                  disabled={authLoading}
-                >
-                  Continue with GitHub
-                </Button>
-              </div>
-              {authMessage ? (
-                <p className="text-sm text-emerald-500">{authMessage}</p>
-              ) : null}
-              {authError ? (
-                <p className="text-sm text-red-500">{authError}</p>
-              ) : null}
-              <p className="text-xs text-neutral-500 dark:text-neutral-500">
-                Need help? Check spam for the latest link or request another if the previous one expired.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -641,7 +512,11 @@ export function Dashboard(): JSX.Element {
                   className="border-white/20 bg-white/10 text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/30"
                 />
               </div>
-              <Button type="submit" variant="secondary" disabled={authLoading}>
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={portfolioState.loading || transfersState.loading}
+              >
                 Load activity
               </Button>
             </form>
@@ -658,9 +533,9 @@ export function Dashboard(): JSX.Element {
                 size="sm"
                 className="border-white/30 bg-transparent text-white hover:bg-white/10"
                 onClick={handleSignOut}
-                disabled={authLoading}
+                disabled={signOutLoading}
               >
-                {authLoading ? "Signing out…" : "Sign out"}
+                {signOutLoading ? "Signing out…" : "Sign out"}
               </Button>
             </div>
           </div>

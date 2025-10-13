@@ -32,6 +32,9 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `npx prisma migrate dev` to create tables (Supabase/Postgres URL required)
 - `npx prisma generate` whenever the schema changes
 - `npm run dev -w web` to launch the Next.js app at http://localhost:3000
+- Visit http://localhost:3000/signin to log in (email/password or Google) before accessing the dashboard
+- Sign-up lives at http://localhost:3000/signup; after confirming your email (if required) return to `/signin`
+- When ready for production, deploy the web workspace to Vercel (set env vars in project settings) and configure worker jobs via Vercel Cron or another scheduler (Render, Fly, GitHub Actions)
 - `npm run start -w worker` to ingest ERC-20 transfers for tracked wallets
 
 ## API Routes (so far)
@@ -51,10 +54,12 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 
 ## Authentication
 
-- Provide `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (copied from your Supabase project) in `.env`.
-- In the Supabase dashboard, set **Authentication → URL Configuration** to include your local origin (e.g. `http://localhost:3000`) so magic-link redirects succeed.
-- Enable the GitHub provider (optional) and configure its callback URL to match your site URL.
-- During development, magic links are sent via Supabase email—check spam folders if you do not see them.
+- Provide `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (copied from your Supabase project) in `web/.env.local`.
+- In the Supabase dashboard, set **Authentication → URL Configuration** to include your local origin (e.g. `http://localhost:3000`).
+- Enable the **Email/Password** provider (required) and optionally toggle “Confirm email” depending on your security needs.
+- Enable the **Google** provider and configure its callback URL to match your app domain/local origin.
+- If you keep email confirmations enabled, configure SMTP in Supabase (Auth → Providers → Email) so verification emails are delivered. Otherwise disable confirmations for development.
+- Deploying with Vercel: set the same Supabase keys (and any API secrets) as environment variables in the Vercel project, enable the authentication providers in Supabase, and add your production domain to the Supabase redirect/callback list.
 
 ## Indexer Notes
 
@@ -72,5 +77,6 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - Run `npm run lint -w web` before opening PRs
 - Keep worker scripts idempotent (upserts keyed by `txHash:logIndex`)
 - Prefer named queries and validated params for any LLM-facing tools
+- In production, schedule the worker jobs (ingestion, prices, embeddings) via Vercel Cron, GitHub Actions, or another scheduler hitting a secure webhook/API route so manual runs are no longer needed.
 
 Questions or ideas? Open an issue or start a discussion in the repo.

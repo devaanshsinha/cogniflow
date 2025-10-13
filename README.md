@@ -46,7 +46,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 ## Frontend
 
 - Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
-- Built-in semantic search box lets you type natural-language queries ("Find recent large transfers") which calls `/api/search` under the hood and renders the ranked matches.
+- Chat panel lets you converse with `/api/chat`; answers include sources, data tables, and chart placeholders produced by deterministic tool calls (named SQL + semantic search).
 
 ## Indexer Notes
 

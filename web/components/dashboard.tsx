@@ -71,6 +71,9 @@ type TransfersResponse = {
     symbol: string | null;
     chain: string;
     stale: boolean;
+    amountUsd: string | null;
+    priceUsd: string | null;
+    priceTimestamp: string | null;
   }>;
   nextCursor: string | null;
   hasMore: boolean;
@@ -80,24 +83,39 @@ type TransfersResponse = {
   } | null;
 };
 
-type SearchResponse = {
-  status: "ok";
-  data: Array<{
-    id: string;
-    score: number;
-    timestamp: string;
-    txHash: string;
-    from: string;
-    to: string;
-    amount: string;
-    symbol: string | null;
-    chain: string;
-  }>;
-};
-
 type FetchState = {
   loading: boolean;
   error: string | null;
+};
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type ChatResponse = {
+  status: "ok";
+  data: {
+    answer: string;
+    tables: Array<{
+      title: string;
+      columns: string[];
+      rows: Array<string[]>;
+    }>;
+    chart: { type: string; data: unknown } | null;
+    sources: string[];
+    debug?: Record<string, unknown>;
+  };
+};
+
+type ChatTurn = {
+  id: string;
+  user: string;
+  answer: string;
+  tables: ChatResponse["data"]["tables"];
+  chart: ChatResponse["data"]["chart"];
+  sources: string[];
+  debug?: Record<string, unknown>;
 };
 
 const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
@@ -158,18 +176,16 @@ export function Dashboard(): JSX.Element {
     error: null,
   });
   const [transfersHasMore, setTransfersHasMore] = useState(false);
-  const [searchState, setSearchState] = useState<FetchState>({
-    loading: false,
-    error: null,
-  });
-
   const [portfolio, setPortfolio] =
     useState<PortfolioResponse["data"] | null>(null);
   const [transfers, setTransfers] = useState<TransfersResponse["data"]>([]);
-  const [searchResults, setSearchResults] =
-    useState<SearchResponse["data"]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchRan, setSearchRan] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatState, setChatState] = useState<FetchState>({
+    loading: false,
+    error: null,
+  });
+const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
 
   const refreshData = useCallback(async (nextAddress: string) => {
     const normalized = nextAddress.trim().toLowerCase();
@@ -180,6 +196,10 @@ export function Dashboard(): JSX.Element {
       setSearchResults([]);
       setSearchState({ loading: false, error: null });
       setSearchRan(false);
+      setChatMessages([]);
+      setChatTurns([]);
+      setChatState({ loading: false, error: null });
+      setChatInput("");
       return;
     }
 
@@ -206,12 +226,13 @@ export function Dashboard(): JSX.Element {
 
       setPortfolio(portfolioJson.data);
       setTransfers(transfersJson.data);
-       setTransfersHasMore(transfersJson.hasMore);
+      setTransfersHasMore(transfersJson.hasMore);
       setPortfolioState({ loading: false, error: null });
       setTransfersState({ loading: false, error: null });
-      setSearchResults([]);
-      setSearchState({ loading: false, error: null });
-      setSearchRan(false);
+      setChatMessages([]);
+      setChatTurns([]);
+      setChatState({ loading: false, error: null });
+      setChatInput("");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unexpected error";
@@ -233,45 +254,104 @@ export function Dashboard(): JSX.Element {
     void refreshData(address);
   }, [address, refreshData]);
 
-  const onSearchSubmit = useCallback(
+  const onChatSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const query = searchQuery.trim();
-      if (!query) {
-        setSearchResults([]);
-        setSearchState({ loading: false, error: null });
-        setSearchRan(false);
+      const prompt = chatInput.trim();
+      if (!prompt) {
         return;
       }
 
-      setSearchState({ loading: true, error: null });
-      try {
-        const normalizedAddress = address.trim().toLowerCase();
-        const params = new URLSearchParams({ q: query });
-        const chain = portfolio?.chain ?? "eth";
-        params.set("chain", chain);
-        if (normalizedAddress.match(/^0x[a-f0-9]{40}$/i)) {
-          params.set("address", normalizedAddress);
-        }
+      const normalizedAddress = address.trim().toLowerCase();
+      if (!normalizedAddress.match(/^0x[a-f0-9]{40}$/i)) {
+        setChatState({
+          loading: false,
+          error: "Enter a valid wallet address before asking questions.",
+        });
+        return;
+      }
 
-        const response = await fetch(`/api/search?${params.toString()}`);
+      const chain = portfolio?.chain ?? "eth";
+      const outboundMessages: ChatMessage[] = [
+        ...chatMessages,
+        { role: "user", content: prompt },
+      ];
+
+      const turnId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
+
+      setChatTurns((prev) => [
+        ...prev,
+        {
+          id: turnId,
+          user: prompt,
+          answer: "",
+          tables: [],
+          chart: null,
+          sources: [],
+          debug: undefined,
+        },
+      ]);
+      setChatState({ loading: true, error: null });
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address: normalizedAddress,
+            chain,
+            messages: outboundMessages,
+          }),
+        });
+
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
-          throw new Error(body?.message ?? "Failed to run search");
+          throw new Error(body?.message ?? "Failed to get assistant reply");
         }
-        const json = (await response.json()) as SearchResponse;
-        setSearchResults(json.data);
-        setSearchState({ loading: false, error: null });
-        setSearchRan(true);
+
+        const json = (await response.json()) as ChatResponse;
+
+        const assistantMessage: ChatMessage = {
+          role: "assistant",
+          content: json.data.answer,
+        };
+
+        setChatMessages([...outboundMessages, assistantMessage]);
+        setChatTurns((prev) =>
+          prev.map((turn) =>
+            turn.id === turnId
+              ? {
+                  ...turn,
+                  answer: json.data.answer,
+                  tables: json.data.tables ?? [],
+                  chart: json.data.chart,
+                  sources: json.data.sources ?? [],
+                  debug: json.data.debug,
+                }
+              : turn,
+          ),
+        );
+        setChatInput("");
+        setChatState({ loading: false, error: null });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unexpected error";
-        setSearchState({ loading: false, error: message });
-        setSearchRan(false);
+        setChatState({ loading: false, error: message });
+        setChatTurns((prev) => prev.filter((turn) => turn.id !== turnId));
       }
     },
-    [searchQuery, address, portfolio?.chain],
+    [chatInput, address, portfolio?.chain, chatMessages],
   );
+
+  const clearChat = useCallback(() => {
+    setChatMessages([]);
+    setChatTurns([]);
+    setChatInput("");
+    setChatState({ loading: false, error: null });
+  }, []);
 
   const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
   const valuations = portfolio?.valuations ?? null;
@@ -465,16 +545,30 @@ export function Dashboard(): JSX.Element {
                           {shortenAddress(transfer.to, 12)}
                         </span>
                       </div>
-                      <div className="mt-3 flex items-center justify-between text-sm text-neutral-600 dark:text-neutral-200">
-                        <span>{transfer.amount}</span>
-                        <a
-                          href={`${EXPLORER_BASE_URL}/tx/${transfer.txHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs font-medium text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300"
-                        >
-                          {transfer.txHash.slice(0, 10)}…
-                        </a>
+                      <div className="mt-3 flex flex-col gap-1 text-sm text-neutral-600 dark:text-neutral-200">
+                        <div className="flex items-center justify-between">
+                          <span>{transfer.amount}</span>
+                          <a
+                            href={`${EXPLORER_BASE_URL}/tx/${transfer.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-medium text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300"
+                          >
+                            {transfer.txHash.slice(0, 10)}…
+                          </a>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                          <span>
+                            {transfer.amountUsd
+                              ? formatUsd(transfer.amountUsd)
+                              : "—"}
+                          </span>
+                          <span>
+                            {transfer.priceUsd
+                              ? `${formatUsd(transfer.priceUsd)} spot`
+                              : "No price"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -573,91 +667,133 @@ export function Dashboard(): JSX.Element {
       <section className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Semantic search</CardTitle>
+            <CardTitle>Chat</CardTitle>
             <CardDescription>
-              Ask for patterns in natural language. Results are ranked using
-              OpenAI embeddings and pgvector similarity.
+              Ask natural-language questions. Responses use deterministic tools
+              (named SQL plus semantic search) under the hood.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <form
-              onSubmit={onSearchSubmit}
+              onSubmit={onChatSubmit}
               className="flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white/80 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50 sm:flex-row sm:items-center"
             >
               <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Find multi-million inflows last month"
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                placeholder="Top counterparties last 14 days"
                 className="flex-1"
               />
               <div className="flex items-center gap-2">
-                <Button type="submit" disabled={searchState.loading}>
-                  {searchState.loading ? "Searching…" : "Search"}
+                <Button type="submit" disabled={chatState.loading}>
+                  {chatState.loading ? "Thinking…" : "Ask"}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setSearchResults([]);
-                    setSearchState({ loading: false, error: null });
-                    setSearchRan(false);
-                  }}
+                  onClick={clearChat}
+                  disabled={chatState.loading && chatTurns.length === 0}
                 >
                   Clear
                 </Button>
               </div>
             </form>
-            {searchState.error && (
-              <p className="text-sm text-red-500">{searchState.error}</p>
-            )}
-            {searchRan && searchResults.length === 0 && !searchState.loading ? (
+            {chatState.error ? (
+              <p className="text-sm text-red-500">{chatState.error}</p>
+            ) : null}
+            {chatTurns.length === 0 && !chatState.loading ? (
               <p className="text-sm text-neutral-500">
-                No semantic matches found. Try refining the query or widening the
-                timeframe.
+                Try prompts like “What were my largest outgoing USDT transfers
+                last week?” or “Show top counterparties over the last 30 days.”
               </p>
             ) : null}
-            {searchResults.length > 0 ? (
-              <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-neutral-100/70 dark:bg-neutral-900/60">
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Similarity</TableHead>
-                      <TableHead>Tx hash</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {searchResults.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>
-                          {new Date(row.timestamp).toLocaleString()}
-                        </TableCell>
-                        <TableCell>{shortenAddress(row.from, 12)}</TableCell>
-                        <TableCell>{shortenAddress(row.to, 12)}</TableCell>
-                        <TableCell>{row.amount}</TableCell>
-                        <TableCell>{row.symbol ?? "—"}</TableCell>
-                        <TableCell>{row.score.toFixed(3)}</TableCell>
-                        <TableCell>
-                          <a
-                            href={`${EXPLORER_BASE_URL}/tx/${row.txHash}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300"
+            <div className="space-y-4">
+              {chatTurns.map((turn, index) => {
+                const isPending =
+                  turn.answer.trim().length === 0 &&
+                  chatState.loading &&
+                  index === chatTurns.length - 1;
+                return (
+                  <div
+                    key={turn.id}
+                    className="space-y-3 rounded-2xl border border-neutral-200 bg-white/80 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50"
+                  >
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-neutral-400">
+                        You
+                      </p>
+                      <p className="text-sm text-neutral-800 dark:text-neutral-200">
+                        {turn.user}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-neutral-400">
+                        Assistant
+                      </p>
+                      <p className="text-sm text-neutral-700 dark:text-neutral-100">
+                        {isPending
+                          ? "Working on it…"
+                          : turn.answer || "No answer returned."}
+                      </p>
+                    </div>
+                    {turn.sources.length > 0 ? (
+                      <p className="text-xs text-neutral-500">
+                        Sources: {turn.sources.join(", ")}
+                      </p>
+                    ) : null}
+                    {turn.tables.length > 0
+                      ? turn.tables.map((table, tableIndex) => (
+                          <div
+                            key={`${turn.id}-table-${tableIndex}`}
+                            className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800"
                           >
-                            {row.txHash.slice(0, 12)}…
-                          </a>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : null}
+                            <div className="border-b border-neutral-200 bg-neutral-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/50 dark:text-neutral-300">
+                              {table.title}
+                            </div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {table.columns.map((column) => (
+                                    <TableHead key={column}>{column}</TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {table.rows.map((row, rowIndex) => (
+                                  <TableRow key={`${turn.id}-row-${rowIndex}`}>
+                                    {row.map((cell, cellIndex) => (
+                                      <TableCell key={cellIndex}>{cell}</TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ))
+                      : null}
+                    {turn.chart ? (
+                      <div className="rounded-xl border border-dashed border-neutral-300 p-4 text-xs text-neutral-500 dark:border-neutral-700">
+                        Chart placeholder ({turn.chart.type}) – integrate a chart
+                        library to render{" "}
+                        <code className="rounded bg-neutral-900/80 px-1 py-0.5 text-neutral-100">
+                          {JSON.stringify(turn.chart.data)}
+                        </code>
+                      </div>
+                    ) : null}
+                    {turn.debug ? (
+                      <details className="rounded-xl border border-neutral-200 bg-white/70 p-3 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+                        <summary className="cursor-pointer font-semibold text-neutral-600 dark:text-neutral-200">
+                          Debug info
+                        </summary>
+                        <pre className="mt-2 whitespace-pre-wrap break-words text-[11px]">
+                          {JSON.stringify(turn.debug, null, 2)}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </CardContent>
         </Card>
       </section>

@@ -31,6 +31,17 @@ function buildWhereClause(address: string, direction: "incoming" | "outgoing" | 
   return base;
 }
 
+function computeUsd(
+  token: string,
+  amount: Prisma.Decimal,
+  priceMap: Map<string, { usd: Prisma.Decimal; timestamp: Date | null }>,
+) {
+  const priceInfo = priceMap.get(token.toLowerCase());
+  if (!priceInfo) return null;
+  const usdValue = priceInfo.usd.mul(amount);
+  return usdValue.toString();
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const parsed = querySchema.safeParse(Object.fromEntries(url.searchParams));
@@ -83,6 +94,31 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    const tokens = Array.from(
+      new Set(items.map((item) => item.token?.toLowerCase()).filter(Boolean)),
+    ) as string[];
+
+    const priceRows = tokens.length
+      ? await prisma.priceSnapshot.findMany({
+          where: {
+            chain,
+            token: { in: tokens },
+          },
+          orderBy: { timestamp: "desc" },
+        })
+      : [];
+
+    const priceMap = new Map<
+      string,
+      { usd: Prisma.Decimal; timestamp: Date | null }
+    >();
+    for (const row of priceRows) {
+      const key = row.token.toLowerCase();
+      if (!priceMap.has(key)) {
+        priceMap.set(key, { usd: row.usd, timestamp: row.timestamp ?? null });
+      }
+    }
+
     const hasMore = items.length > limit;
     const data = items.slice(0, limit).map((row) => ({
       id: row.id,
@@ -98,6 +134,11 @@ export async function GET(request: Request) {
       decimals: row.decimals,
       chain: row.chain,
       stale: row.stale,
+      amountUsd: computeUsd(row.token, row.amountDec, priceMap),
+      priceUsd: priceMap.get(row.token.toLowerCase())?.usd.toString() ?? null,
+      priceTimestamp: priceMap.get(row.token.toLowerCase())?.timestamp
+        ? priceMap.get(row.token.toLowerCase())!.timestamp!.toISOString()
+        : null,
     }));
     const nextCursor = hasMore ? items[limit].id : null;
 

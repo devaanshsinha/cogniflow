@@ -11,6 +11,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@prisma/client": "^6.17.0",
+    "prisma": "^6.17.0",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/auth-helpers-react": "^0.5.0",
     "@supabase/ssr": "^0.7.0",
@@ -18,12 +20,10 @@
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "zod": "^3.23.8",
-    "@prisma/client": "^5.18.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "prisma": "^5.18.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

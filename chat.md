@@ -158,14 +158,18 @@ Run from repository root (dotenv config required):
    - Build chat interface in the dashboard that consumes `/api/chat`.
    - Add support for more named queries (top tokens, gas analysis, net positions in USD).
    - Display semantic search matches inside chat responses.
-3. **Analytics & Visuals**
+3. **Authentication & User management**
+   - Integrate Supabase Auth (email/GitHub magic links).
+   - Persist user-specific wallets, chat history, and saved settings.
+   - Surface login/logout UI in the dashboard.
+4. **Analytics & Visuals**
    - Charts (e.g. net flow over time, counterparties bar charts).
    - Saved addresses / multi-wallet management.
-4. **Resilience & Testing**
+5. **Resilience & Testing**
    - Add integration tests for API routes.
    - Improve retry/backoff metrics (logging, alerts).
    - Consider caching frequently accessed results.
-5. **Stretch goals (from original plan)**
+6. **Stretch goals (from original plan)**
    - Multi-chain support (Polygon/Base, Solana via Helius).
    - Discord/email summaries, alerts, CSV exports.
    - LLM guardrails, tool auditing.
@@ -199,6 +203,8 @@ Run from repository root (dotenv config required):
 - **web/app/api/search/route.ts** – semantic search with USD awareness.
 - **web/app/api/chat/route.ts** – intent router for chat/tooling.
 - **web/lib/tools/sqlQueries.ts** – named SQL queries & executors.
+- **web/lib/supabase/** – browser/server client helpers for Supabase Auth.
+- **web/components/providers/supabase-provider.tsx** – wraps the app with Supabase session context.
 - **web/components/dashboard.tsx** – entire dashboard UI (address form, cards, tables, search).
 - **web/components/ui/** – reusable shadcn-style components.
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
 import {
   Card,
   CardContent,
@@ -165,6 +166,14 @@ function formatTimestamp(value: string | null) {
 }
 
 export function Dashboard(): JSX.Element {
+  const session = useSession();
+  const supabase = useSupabaseClient();
+
+  const [authEmail, setAuthEmail] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [address, setAddress] = useState(DEMO_ADDRESS);
   const [pendingAddress, setPendingAddress] = useState(DEMO_ADDRESS);
   const [portfolioState, setPortfolioState] = useState<FetchState>({
@@ -184,81 +193,99 @@ export function Dashboard(): JSX.Element {
     loading: false,
     error: null,
   });
-const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
 
-  const refreshData = useCallback(async (nextAddress: string) => {
-    const normalized = nextAddress.trim().toLowerCase();
-    if (!normalized) {
-      setPortfolio(null);
-      setTransfers([]);
-      setTransfersHasMore(false);
-      setSearchResults([]);
-      setSearchState({ loading: false, error: null });
-      setSearchRan(false);
-      setChatMessages([]);
-      setChatTurns([]);
-      setChatState({ loading: false, error: null });
-      setChatInput("");
-      return;
-    }
+  const refreshData = useCallback(
+    async (nextAddress: string) => {
+      if (!session) return;
 
-    setPortfolioState({ loading: true, error: null });
-    setTransfersState({ loading: true, error: null });
-
-    try {
-      const [portfolioRes, transfersRes] = await Promise.all([
-        fetch(`/api/portfolio?address=${normalized}`),
-        fetch(`/api/transfers?address=${normalized}&limit=25`),
-      ]);
-
-      if (!portfolioRes.ok) {
-        const body = await portfolioRes.json().catch(() => ({}));
-        throw new Error(body?.message ?? "Failed to load portfolio");
-      }
-      if (!transfersRes.ok) {
-        const body = await transfersRes.json().catch(() => ({}));
-        throw new Error(body?.message ?? "Failed to load transfers");
+      const normalized = nextAddress.trim().toLowerCase();
+      if (!normalized) {
+        setPortfolio(null);
+        setTransfers([]);
+        setTransfersHasMore(false);
+        setChatMessages([]);
+        setChatTurns([]);
+        setChatState({ loading: false, error: null });
+        setChatInput("");
+        return;
       }
 
-      const portfolioJson = (await portfolioRes.json()) as PortfolioResponse;
-      const transfersJson = (await transfersRes.json()) as TransfersResponse;
+      setPortfolioState({ loading: true, error: null });
+      setTransfersState({ loading: true, error: null });
 
-      setPortfolio(portfolioJson.data);
-      setTransfers(transfersJson.data);
-      setTransfersHasMore(transfersJson.hasMore);
-      setPortfolioState({ loading: false, error: null });
-      setTransfersState({ loading: false, error: null });
-      setChatMessages([]);
-      setChatTurns([]);
-      setChatState({ loading: false, error: null });
-      setChatInput("");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unexpected error";
-      setPortfolioState({ loading: false, error: message });
-      setTransfersState({ loading: false, error: message });
-    }
-  }, []);
+      try {
+        const [portfolioRes, transfersRes] = await Promise.all([
+          fetch(`/api/portfolio?address=${normalized}`),
+          fetch(`/api/transfers?address=${normalized}&limit=25`),
+        ]);
+
+        if (!portfolioRes.ok) {
+          const body = await portfolioRes.json().catch(() => ({}));
+          throw new Error(body?.message ?? "Failed to load portfolio");
+        }
+        if (!transfersRes.ok) {
+          const body = await transfersRes.json().catch(() => ({}));
+          throw new Error(body?.message ?? "Failed to load transfers");
+        }
+
+        const portfolioJson = (await portfolioRes.json()) as PortfolioResponse;
+        const transfersJson = (await transfersRes.json()) as TransfersResponse;
+
+        setPortfolio(portfolioJson.data);
+        setTransfers(transfersJson.data);
+        setTransfersHasMore(transfersJson.hasMore);
+        setPortfolioState({ loading: false, error: null });
+        setTransfersState({ loading: false, error: null });
+        setChatMessages([]);
+        setChatTurns([]);
+        setChatState({ loading: false, error: null });
+        setChatInput("");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unexpected error";
+        setPortfolioState({ loading: false, error: message });
+        setTransfersState({ loading: false, error: message });
+      }
+    },
+    [session],
+  );
 
   const onSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (!session) {
+        setChatState({
+          loading: false,
+          error: "Please sign in to load wallet data.",
+        });
+        return;
+      }
       setAddress(pendingAddress);
       void refreshData(pendingAddress);
     },
-    [pendingAddress, refreshData],
+    [pendingAddress, refreshData, session],
   );
 
   useEffect(() => {
+    if (!session) return;
     void refreshData(address);
-  }, [address, refreshData]);
+  }, [address, refreshData, session]);
 
   const onChatSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const prompt = chatInput.trim();
       if (!prompt) {
+        return;
+      }
+
+      if (!session) {
+        setChatState({
+          loading: false,
+          error: "Please sign in to ask questions.",
+        });
         return;
       }
 
@@ -343,8 +370,58 @@ const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
         setChatTurns((prev) => prev.filter((turn) => turn.id !== turnId));
       }
     },
-    [chatInput, address, portfolio?.chain, chatMessages],
+    [chatInput, address, portfolio?.chain, chatMessages, session],
   );
+
+  const handleEmailSignIn = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError(null);
+      setAuthMessage(null);
+      const email = authEmail.trim();
+      if (!email) {
+        setAuthError("Enter a valid email address.");
+        return;
+      }
+
+      setAuthLoading(true);
+      const redirectTo =
+        typeof window !== "undefined" ? window.location.origin : undefined;
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
+      });
+      if (error) {
+        setAuthError(error.message);
+      } else {
+        setAuthMessage("Check your email for the login link.");
+        setAuthEmail("");
+      }
+      setAuthLoading(false);
+    },
+    [authEmail, supabase],
+  );
+
+  const handleOAuthSignIn = useCallback(async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthLoading(true);
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        redirectTo: origin,
+      },
+    });
+    if (error) {
+      setAuthError(error.message);
+      setAuthLoading(false);
+    }
+    // On success, Supabase will redirect; no further action needed.
+  }, [supabase]);
 
   const clearChat = useCallback(() => {
     setChatMessages([]);
@@ -352,6 +429,34 @@ const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     setChatInput("");
     setChatState({ loading: false, error: null });
   }, []);
+
+  const handleSignOut = useCallback(async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setAuthError(error.message);
+    }
+    setAuthLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (session) {
+      return;
+    }
+    setPortfolio(null);
+    setTransfers([]);
+    setTransfersHasMore(false);
+    setPortfolioState({ loading: false, error: null });
+    setTransfersState({ loading: false, error: null });
+    setChatMessages([]);
+    setChatTurns([]);
+    setChatInput("");
+    setChatState({ loading: false, error: null });
+    setAddress(DEMO_ADDRESS);
+    setPendingAddress(DEMO_ADDRESS);
+  }, [session]);
 
   const holdings = useMemo(() => portfolio?.holdings ?? [], [portfolio]);
   const valuations = portfolio?.valuations ?? null;
@@ -424,6 +529,89 @@ const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
       );
   }, [holdings]);
 
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-neutral-100 bg-gradient-to-br from-neutral-200 via-neutral-100 to-neutral-200 px-6 py-16 dark:from-neutral-950 dark:via-neutral-950 dark:to-neutral-900 sm:px-10">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 rounded-3xl border border-white/30 bg-white/70 px-8 py-10 shadow-2xl backdrop-blur dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:shadow-neutral-950/40 sm:px-12 md:flex-row md:items-start">
+          <div className="flex-1 space-y-4">
+            <Badge variant="outline" className="border-neutral-400/50 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+              Cogniflow Access
+            </Badge>
+            <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-4xl">
+              Sign in to unlock wallet intelligence
+            </h1>
+            <p className="max-w-xl text-sm text-neutral-600 dark:text-neutral-400 sm:text-base">
+              Use a magic link or GitHub OAuth to access real-time analytics, chat insights, and semantic search across your on-chain activity. We only need your email to deliver the secure login link.
+            </p>
+            <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <li>• One-click magic links, valid for a short time.</li>
+              <li>• GitHub OAuth for faster sign-ins.</li>
+              <li>• Sessions persist across refreshes until you sign out.</li>
+            </ul>
+          </div>
+          <Card className="w-full max-w-sm border-neutral-200/70 bg-white/90 shadow-lg dark:border-neutral-800 dark:bg-neutral-900/80">
+            <CardHeader className="space-y-2">
+              <CardTitle className="text-lg font-semibold">
+                Continue to Cogniflow
+              </CardTitle>
+              <CardDescription className="text-sm">
+                Magic link recommended for quick, passwordless access.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <form className="space-y-3" onSubmit={handleEmailSignIn}>
+                <label className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500 dark:text-neutral-400">
+                  Email address
+                </label>
+                <Input
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  disabled={authLoading}
+                  required
+                  className="bg-white/90 dark:bg-neutral-900/70"
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={authLoading}
+                >
+                  {authLoading ? "Sending…" : "Send magic link"}
+                </Button>
+              </form>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-neutral-400">
+                  <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
+                  <span>or</span>
+                  <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-neutral-300 text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800"
+                  onClick={handleOAuthSignIn}
+                  disabled={authLoading}
+                >
+                  Continue with GitHub
+                </Button>
+              </div>
+              {authMessage ? (
+                <p className="text-sm text-emerald-500">{authMessage}</p>
+              ) : null}
+              {authError ? (
+                <p className="text-sm text-red-500">{authError}</p>
+              ) : null}
+              <p className="text-xs text-neutral-500 dark:text-neutral-500">
+                Need help? Check spam for the latest link or request another if the previous one expired.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 pb-16 pt-12 sm:px-8">
       <section className="grid gap-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-700 p-8 text-white shadow-xl dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-800">
@@ -440,22 +628,42 @@ const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
               activity with deterministic tools and semantic search.
             </p>
           </div>
-          <form
-            onSubmit={onSubmit}
-            className="flex w-full max-w-lg flex-col gap-3 sm:flex-row sm:items-center"
-          >
-            <div className="flex-1">
-              <Input
-                value={pendingAddress}
-                onChange={(event) => setPendingAddress(event.target.value)}
-                placeholder="0x…"
-                className="border-white/20 bg-white/10 text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/30"
-              />
+          <div className="flex w-full max-w-lg flex-col gap-3">
+            <form
+              onSubmit={onSubmit}
+              className="flex flex-col gap-3 sm:flex-row sm:items-center"
+            >
+              <div className="flex-1">
+                <Input
+                  value={pendingAddress}
+                  onChange={(event) => setPendingAddress(event.target.value)}
+                  placeholder="0x…"
+                  className="border-white/20 bg-white/10 text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/30"
+                />
+              </div>
+              <Button type="submit" variant="secondary" disabled={authLoading}>
+                Load activity
+              </Button>
+            </form>
+            <div className="flex flex-col gap-1 text-xs text-neutral-300 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Signed in as{" "}
+                <span className="font-semibold">
+                  {session.user.email ?? session.user.id}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/30 bg-transparent text-white hover:bg-white/10"
+                onClick={handleSignOut}
+                disabled={authLoading}
+              >
+                {authLoading ? "Signing out…" : "Sign out"}
+              </Button>
             </div>
-            <Button type="submit" variant="secondary">
-              Load activity
-            </Button>
-          </form>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-300">
           <Badge variant="outline" className="border-white/20 text-white">

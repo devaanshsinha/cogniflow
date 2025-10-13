@@ -45,8 +45,16 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 
 ## Frontend
 
+- Users sign in with Supabase Auth (email magic link or GitHub OAuth) before accessing wallet data.
 - Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
 - Chat panel lets you converse with `/api/chat`; answers include sources, data tables, and chart placeholders produced by deterministic tool calls (named SQL + semantic search).
+
+## Authentication
+
+- Provide `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (copied from your Supabase project) in `.env`.
+- In the Supabase dashboard, set **Authentication → URL Configuration** to include your local origin (e.g. `http://localhost:3000`) so magic-link redirects succeed.
+- Enable the GitHub provider (optional) and configure its callback URL to match your site URL.
+- During development, magic links are sent via Supabase email—check spam folders if you do not see them.
 
 ## Indexer Notes
 

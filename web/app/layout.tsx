@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { SupabaseProvider } from "@/components/providers/supabase-provider";
+import { createServerSupabaseClient } from "@/lib/supabase/server-client";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,17 +19,22 @@ export const metadata: Metadata = {
   description: "Explore on-chain wallet activity with chat, charts, and analytics.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <SupabaseProvider initialSession={session}>{children}</SupabaseProvider>
       </body>
     </html>
   );

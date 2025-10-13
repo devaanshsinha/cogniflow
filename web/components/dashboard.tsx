@@ -1,6 +1,5 @@
 "use client";
 
-import type { JSX } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
@@ -167,7 +166,7 @@ function formatTimestamp(value: string | null) {
   return date.toLocaleString();
 }
 
-export function Dashboard(): JSX.Element {
+export function Dashboard() {
   const session = useSession();
   const router = useRouter();
   const supabase = useSupabaseClient();

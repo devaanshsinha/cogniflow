@@ -6,6 +6,11 @@ import { createServerSupabaseClient } from "@/lib/supabase/server-client";
 export const metadata: Metadata = {
   title: "Cogniflow Dashboard",
   description: "Explore on-chain wallet activity with chat, charts, and analytics.",
+  icons: {
+    icon: "/logo.svg",
+    shortcut: "/logo.svg",
+    apple: "/logo.svg",
+  },
 };
 
 export default async function RootLayout({

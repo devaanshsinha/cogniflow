@@ -27,13 +27,60 @@ type NormalizedTransfer = {
 
 const MAX_DECIMALS_STORED = 18;
 
+export type SyncWalletOptions = {
+  /**
+   * Override the default lookback window (in blocks) used when we have no cursor.
+   */
+  lookbackBlocks?: number;
+  /**
+   * Limit pagination depth when calling the transfer API. Defaults to 5 pages (~5k transfers).
+   */
+  maxPages?: number;
+  /**
+   * Skip fetching/upserting block metadata. Useful for quick UI-triggered syncs.
+   */
+  skipBlockMetadata?: boolean;
+  /**
+   * Skip ingestion if the wallet has been synced within this many milliseconds.
+   */
+  skipIfSyncedWithinMs?: number;
+};
+
 export async function syncWalletTransfers(
   wallet: Wallet,
   logger?: Logger,
+  options: SyncWalletOptions = {},
 ): Promise<void> {
   const log = ensureLogger(logger);
+
+  const lastSyncedAt =
+    wallet.lastSyncedAt instanceof Date
+      ? wallet.lastSyncedAt
+      : wallet.lastSyncedAt
+        ? new Date(wallet.lastSyncedAt)
+        : null;
+
+  if (
+    options.skipIfSyncedWithinMs &&
+    lastSyncedAt &&
+    Number.isFinite(options.skipIfSyncedWithinMs) &&
+    Date.now() - lastSyncedAt.getTime() < options.skipIfSyncedWithinMs
+  ) {
+    log.info(
+      {
+        address: wallet.address,
+        lastSyncedAt: lastSyncedAt.toISOString(),
+      },
+      "Skipping ingestion; wallet recently synced",
+    );
+    return;
+  }
+
   const latestBlock = await getLatestBlockNumber();
-  const lookback = getLookbackBlocks();
+  const lookback =
+    options.lookbackBlocks && Number.isFinite(options.lookbackBlocks)
+      ? Math.max(0, options.lookbackBlocks)
+      : getLookbackBlocks();
 
   const fromBlockCandidate =
     wallet.lastSyncedBlock !== null && wallet.lastSyncedBlock !== undefined
@@ -65,6 +112,7 @@ export async function syncWalletTransfers(
       fromBlock,
       toBlock: latestBlock,
       direction: "incoming",
+      maxPages: options.maxPages,
     }),
     getAssetTransfersForWallet({
       logger: log,
@@ -72,6 +120,7 @@ export async function syncWalletTransfers(
       fromBlock,
       toBlock: latestBlock,
       direction: "outgoing",
+      maxPages: options.maxPages,
     }),
   ]);
 
@@ -96,7 +145,9 @@ export async function syncWalletTransfers(
     new Set(normalized.map((transfer) => transfer.blockNumber)),
   );
 
-  await upsertBlocks(uniqueBlocks, log);
+  if (!options.skipBlockMetadata) {
+    await upsertBlocks(uniqueBlocks, log);
+  }
   await upsertTransfers(normalized, log);
 
   const maxSyncedBlock = normalized.reduce(

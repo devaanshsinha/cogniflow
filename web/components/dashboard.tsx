@@ -121,6 +121,8 @@ type ChatTurn = {
 };
 
 const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
+const DEFAULT_CHAIN =
+  process.env.NEXT_PUBLIC_DEFAULT_CHAIN?.toLowerCase() ?? "eth";
 const EXPLORER_BASE_URL =
   process.env.NEXT_PUBLIC_ETHERSCAN_BASE_URL ?? "https://etherscan.io";
 
@@ -215,9 +217,22 @@ export function Dashboard() {
       setTransfersState({ loading: true, error: null });
 
       try {
+        const ensureWalletResponse = await fetch("/api/wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: normalized, chain: DEFAULT_CHAIN }),
+        });
+
+        if (!ensureWalletResponse.ok) {
+          const body = await ensureWalletResponse.json().catch(() => ({}));
+          throw new Error(body?.message ?? "Failed to prepare wallet");
+        }
+
         const [portfolioRes, transfersRes] = await Promise.all([
-          fetch(`/api/portfolio?address=${normalized}`),
-          fetch(`/api/transfers?address=${normalized}&limit=25`),
+          fetch(`/api/portfolio?address=${normalized}&chain=${DEFAULT_CHAIN}`),
+          fetch(
+            `/api/transfers?address=${normalized}&chain=${DEFAULT_CHAIN}&limit=25`,
+          ),
         ]);
 
         if (!portfolioRes.ok) {

@@ -46,6 +46,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `GET /api/search?q=...&address=0x...&chain=eth` – semantic search over transfer embeddings (requires the embedding job to populate `tx_embeddings`)
 - `POST /tool/sql` – deterministic named SQL tooling for the chat agent (see `/tool/sql` GET for the allowlisted names)
 - `POST /api/chat` – chat orchestrator that calls deterministic SQL tools and semantic search when you ask discovery-style questions
+- `POST /api/wallets` – ensures the signed-in user's wallet exists in the database and (by default) triggers an immediate ingestion run
 - `POST /api/ingest` – triggers ERC-20 ingestion for all wallets (or a provided `{ "address": "0x..." }` payload); requires `Authorization: Bearer <INGESTION_SECRET>`
 - `POST /api/prices` – runs the CoinGecko enrichment job with optional `{ "chain": "...", "tokens": ["0x..."] }`; requires `Authorization: Bearer <INGESTION_SECRET>`
 - `POST /api/embeddings` – generates OpenAI embeddings for pending transfers with optional `{ "chain": "...", "maxRecords": 200 }`; requires `Authorization: Bearer <INGESTION_SECRET>`
@@ -54,6 +55,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 
 - Users sign in with Supabase Auth (email magic link or GitHub OAuth) before accessing wallet data.
 - Dashboard page includes an address form, summary cards, token net positions, and a transfers table backed by the APIs above (defaults to the seeded demo address).
+- When a user submits a new wallet, the app calls `/api/wallets` to upsert it for the signed-in user and runs ingestion immediately so subsequent API calls return fresh data.
 - Chat panel lets you converse with `/api/chat`; answers include sources, data tables, and chart placeholders produced by deterministic tool calls (named SQL + semantic search).
 
 ## Authentication
@@ -72,6 +74,7 @@ Cogniflow is an on-chain intelligence agent that lets users explore wallet activ
 - `ETH_LOOKBACK_BLOCKS` controls the initial sync window when no cursor exists; defaults to 5000.
 - `RPC_MAX_RETRIES`, `RPC_RETRY_BASE_MS`, and `RPC_RETRY_MAX_MS` tune the exponential backoff for RPC calls (defaults: 5 attempts, 300ms base delay, 4.5s cap).
 - `NEXT_PUBLIC_ETHERSCAN_BASE_URL` configures the explorer links in the dashboard (defaults to mainnet `https://etherscan.io`; set to `https://sepolia.etherscan.io` for Sepolia).
+- `UI_SYNC_MAX_PAGES`, `UI_SYNC_LOOKBACK_BLOCKS`, and `UI_SYNC_MIN_INTERVAL_MS` govern the lightweight UI-triggered ingestion run (defaults: 2 pages, 1500-block lookback, skip resyncs within 5 minutes).
 - Hourly price enrichment: run `npm run start:prices -w worker` (or schedule it) to fetch USD prices from CoinGecko and populate the `prices` table for the tokens seen on the chain. Free CoinGecko tier supports one token per request, so leave `PRICE_BATCH_SIZE` at `1` unless you supply a Pro API key.
 - Embeddings: run `npm run start:embeddings -w worker` to generate OpenAI embeddings for uncached transfers (`tx_embeddings`). Provide `OPENAI_API_KEY` and `EMBEDDING_MODEL`; the free tier works for small batches.
 - Embeddings: run `npm run start:embeddings -w worker` to generate OpenAI embeddings for uncached transfers (`tx_embeddings`). Provide `OPENAI_API_KEY` and `EMBEDDING_MODEL`; by default vectors are truncated/padded to `EMBEDDING_DIM` (768) to keep storage consistent.

@@ -152,7 +152,7 @@ Run from repository root (dotenv config required):
 
 1. **Worker Automation**
    - Schedule periodic runs with Vercel Cron (or GitHub Actions/Render) to call `/api/ingest`, `/api/prices`, and `/api/embeddings` with the `INGESTION_SECRET`.
-   - Add on-demand wallet refresh in the dashboard by POSTing to `/api/ingest`.
+   - Dashboard submission now auto-upserts wallets via `/api/wallets` and triggers an immediate ingestion run; monitor runtime logs as usage grows.
    - Layer in monitoring/log aggregation once cron hooks are live.
 2. **Chat & UI Enhancements**
    - Build chat interface in the dashboard that consumes `/api/chat`.
@@ -204,6 +204,7 @@ Run from repository root (dotenv config required):
 - **web/app/api/portfolio/route.ts** – aggregated stats, holdings, valuations.
 - **web/app/api/search/route.ts** – semantic search with USD awareness.
 - **web/app/api/chat/route.ts** – intent router for chat/tooling.
+- **web/app/api/wallets/route.ts** – authenticated wallet upsert + lightweight ingestion trigger (tuned by `UI_SYNC_*` envs).
 - **web/app/api/ingest/route.ts** – secure ingestion trigger; loops wallets & calls `syncWalletTransfers`.
 - **web/app/api/prices/route.ts** – secure price updater calling CoinGecko via shared job.
 - **web/app/api/embeddings/route.ts** – secure embeddings generator using shared OpenAI job.

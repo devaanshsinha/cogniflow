@@ -119,7 +119,6 @@ export async function POST(request: Request) {
         await syncWalletTransfers(wallet, logger, {
           maxPages: Number(process.env.UI_SYNC_MAX_PAGES ?? "2"),
           lookbackBlocks: Number(process.env.UI_SYNC_LOOKBACK_BLOCKS ?? "1500"),
-          skipBlockMetadata: true,
           skipIfSyncedWithinMs: Number(
             process.env.UI_SYNC_MIN_INTERVAL_MS ?? `${5 * 60 * 1000}`,
           ),

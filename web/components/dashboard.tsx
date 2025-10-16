@@ -123,6 +123,7 @@ type ChatTurn = {
 const DEMO_ADDRESS = "0xabc123abc123abc123abc123abc123abc123abc1";
 const DEFAULT_CHAIN =
   process.env.NEXT_PUBLIC_DEFAULT_CHAIN?.toLowerCase() ?? "eth";
+const DEFAULT_WINDOW_DAYS = 7;
 const EXPLORER_BASE_URL =
   process.env.NEXT_PUBLIC_ETHERSCAN_BASE_URL ?? "https://etherscan.io";
 
@@ -486,6 +487,12 @@ export function Dashboard() {
     }>;
   }, [portfolio, valuations]);
 
+  const windowDays = portfolio?.windowDays ?? DEFAULT_WINDOW_DAYS;
+  const hasWindowActivity =
+    (portfolio?.totals.transfers ?? 0) > 0 ||
+    (portfolio?.totals.incomingTransfers ?? 0) > 0 ||
+    (portfolio?.totals.outgoingTransfers ?? 0) > 0;
+
   const topHoldings = useMemo(() => {
     return holdings
       .slice()
@@ -494,12 +501,28 @@ export function Dashboard() {
       );
   }, [holdings]);
 
+  const showGlobalLoading =
+    portfolioState.loading || transfersState.loading;
+
   if (!session) {
     return null;
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 pb-16 pt-12 sm:px-8">
+    <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 pb-16 pt-12 sm:px-8">
+      {showGlobalLoading ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-8 z-40 flex justify-center">
+          <div className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-2 text-neutral-700 shadow-lg backdrop-blur-sm dark:border-neutral-700 dark:bg-neutral-900/80 dark:text-neutral-100">
+            <span className="relative flex h-3 w-3">
+              <span className="absolute inset-0 animate-ping rounded-full bg-sky-400/70" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-gradient-to-r from-sky-400 via-indigo-400 to-blue-500" />
+            </span>
+            <span className="text-xs font-medium text-neutral-700 dark:text-neutral-200">
+              Updating wallet analytics…
+            </span>
+          </div>
+        </div>
+      ) : null}
       <section className="grid gap-6 rounded-3xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-700 p-8 text-white shadow-xl dark:from-neutral-950 dark:via-neutral-900 dark:to-neutral-800">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
@@ -569,12 +592,27 @@ export function Dashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {summaryItems.length === 0 && portfolioState.loading ? (
+        {portfolioState.loading ? (
           <p className="text-sm text-neutral-500">Loading summary…</p>
-        ) : summaryItems.length === 0 ? (
+        ) : !portfolio ? (
           <p className="text-sm text-neutral-500">
             Enter an address to see portfolio insights.
           </p>
+        ) : !hasWindowActivity ? (
+          <Card className="border-neutral-100 dark:border-neutral-800 sm:col-span-2 xl:col-span-3">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg text-neutral-900 dark:text-neutral-50">
+                No transfers in the last {windowDays} days
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                We didn’t detect movements during this window. Historical
+                transfers are still listed below so you can preview older
+                activity while the backfill completes.
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           summaryItems.map((item) => (
             <Card key={item.label} className="border-neutral-100 dark:border-neutral-800">

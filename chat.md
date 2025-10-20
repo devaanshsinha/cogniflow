@@ -152,6 +152,7 @@ Run from repository root (dotenv config required):
 
 1. **Worker Automation**
    - Schedule periodic runs with Vercel Cron (or GitHub Actions/Render) to call `/api/ingest`, `/api/prices`, and `/api/embeddings` with the `INGESTION_SECRET`.
+   - Ingestion runs now stream wallets in small batches (`INGESTION_BATCH_SIZE`) and cap per-run block ranges (`INGESTION_MAX_BLOCK_SPAN`) so GitHub Actions stay under the serverless timeout.
    - Dashboard submission now auto-upserts wallets via `/api/wallets` and triggers an immediate ingestion run; monitor runtime logs as usage grows.
    - Layer in monitoring/log aggregation once cron hooks are live.
 2. **Chat & UI Enhancements**

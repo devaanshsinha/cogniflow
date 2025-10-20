@@ -9,7 +9,7 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Call production /api/ingest
+      - name: Process ingestion batches
         env:
           APP_URL: ${{ secrets.APP_URL }}
           INGESTION_SECRET: ${{ secrets.INGESTION_SECRET }}
@@ -23,15 +23,30 @@ jobs:
             exit 1
           fi
 
-          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" \
-            -X POST "${APP_URL}/api/ingest" \
-            -H "Authorization: Bearer ${INGESTION_SECRET}" \
-            -H "Content-Type: application/json")
+          for attempt in {1..10}
+          do
+            HTTP_STATUS=$(curl -s -L -o response.json -w "%{http_code}" \
+              -X POST "${APP_URL}/api/ingest" \
+              -H "Authorization: Bearer ${INGESTION_SECRET}" \
+              -H "Content-Type: application/json")
 
-          cat response.json
-          rm response.json
+            cat response.json
 
-          if [ "$HTTP_STATUS" -ge 400 ]; then
-            echo "Request failed with status ${HTTP_STATUS}"
-            exit 1
-          fi
+            if [ "$HTTP_STATUS" -ge 400 ]; then
+              echo "Request failed with status ${HTTP_STATUS}"
+              rm response.json
+              exit 1
+            fi
+
+            DONE=$(jq -r '.done // false' response.json)
+            REMAINING=$(jq -r '.remaining // 0' response.json)
+            rm response.json
+
+            if [ "$DONE" = "true" ] || [ "$REMAINING" -eq 0 ]; then
+              echo "Ingestion batches complete."
+              break
+            fi
+
+            echo "More batches pending (remaining: ${REMAINING}). Sleeping before next run..."
+            sleep 10
+          done

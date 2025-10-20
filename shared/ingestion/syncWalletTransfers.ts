@@ -28,29 +28,28 @@ type NormalizedTransfer = {
 const MAX_DECIMALS_STORED = 18;
 
 export type SyncWalletOptions = {
-  /**
-   * Override the default lookback window (in blocks) used when we have no cursor.
-   */
   lookbackBlocks?: number;
-  /**
-   * Limit pagination depth when calling the transfer API. Defaults to 5 pages (~5k transfers).
-   */
   maxPages?: number;
-  /**
-   * Skip fetching/upserting block metadata. Useful for quick UI-triggered syncs.
-   */
   skipBlockMetadata?: boolean;
-  /**
-   * Skip ingestion if the wallet has been synced within this many milliseconds.
-   */
   skipIfSyncedWithinMs?: number;
+  maxBlockSpan?: number;
+};
+
+export type SyncWalletResult = {
+  walletId: string;
+  address: string;
+  fromBlock: number;
+  toBlock: number;
+  latestBlock: number;
+  transfersProcessed: number;
+  hasMore: boolean;
 };
 
 export async function syncWalletTransfers(
   wallet: Wallet,
   logger?: Logger,
   options: SyncWalletOptions = {},
-): Promise<void> {
+): Promise<SyncWalletResult> {
   const log = ensureLogger(logger);
 
   const lastSyncedAt =
@@ -73,7 +72,16 @@ export async function syncWalletTransfers(
       },
       "Skipping ingestion; wallet recently synced",
     );
-    return;
+    const cursor = wallet.lastSyncedBlock ?? 0;
+    return {
+      walletId: wallet.id,
+      address: wallet.address,
+      fromBlock: cursor,
+      toBlock: cursor,
+      latestBlock: cursor,
+      transfersProcessed: 0,
+      hasMore: false,
+    };
   }
 
   const latestBlock = await getLatestBlockNumber();
@@ -88,6 +96,13 @@ export async function syncWalletTransfers(
       : latestBlock - lookback;
   const fromBlock = Math.max(fromBlockCandidate, 0);
 
+  const maxBlockSpan =
+    options.maxBlockSpan && Number.isFinite(options.maxBlockSpan)
+      ? Math.max(0, Math.floor(options.maxBlockSpan))
+      : null;
+  const targetToBlock =
+    maxBlockSpan != null ? Math.min(latestBlock, fromBlock + maxBlockSpan) : latestBlock;
+
   if (fromBlock > latestBlock) {
     log.info(
       {
@@ -97,11 +112,19 @@ export async function syncWalletTransfers(
       },
       "Wallet already synced to head",
     );
-    return;
+    return {
+      walletId: wallet.id,
+      address: wallet.address,
+      fromBlock,
+      toBlock: latestBlock,
+      latestBlock,
+      transfersProcessed: 0,
+      hasMore: false,
+    };
   }
 
   log.info(
-    { address: wallet.address, fromBlock, toBlock: latestBlock },
+    { address: wallet.address, fromBlock, toBlock: targetToBlock, latestBlock },
     "Fetching ERC-20 transfers",
   );
 
@@ -110,7 +133,7 @@ export async function syncWalletTransfers(
       logger: log,
       address: wallet.address,
       fromBlock,
-      toBlock: latestBlock,
+      toBlock: targetToBlock,
       direction: "incoming",
       maxPages: options.maxPages,
     }),
@@ -118,7 +141,7 @@ export async function syncWalletTransfers(
       logger: log,
       address: wallet.address,
       fromBlock,
-      toBlock: latestBlock,
+      toBlock: targetToBlock,
       direction: "outgoing",
       maxPages: options.maxPages,
     }),
@@ -129,15 +152,23 @@ export async function syncWalletTransfers(
     await prisma.wallet.update({
       where: { id: wallet.id },
       data: {
-        lastSyncedBlock: latestBlock,
+        lastSyncedBlock: targetToBlock,
         lastSyncedAt: new Date(),
       },
     });
     log.info(
-      { address: wallet.address, latestBlock },
+      { address: wallet.address, toBlock: targetToBlock },
       "No transfers discovered in window",
     );
-    return;
+    return {
+      walletId: wallet.id,
+      address: wallet.address,
+      fromBlock,
+      toBlock: targetToBlock,
+      latestBlock,
+      transfersProcessed: 0,
+      hasMore: targetToBlock < latestBlock,
+    };
   }
 
   const normalized = dedupeById(normalizeTransfers(rawTransfers, wallet.chain));
@@ -154,11 +185,12 @@ export async function syncWalletTransfers(
     (acc, transfer) => Math.max(acc, transfer.blockNumber),
     wallet.lastSyncedBlock ?? 0,
   );
+  const finalSyncedBlock = Math.max(maxSyncedBlock, targetToBlock);
 
   await prisma.wallet.update({
     where: { id: wallet.id },
     data: {
-      lastSyncedBlock: maxSyncedBlock,
+      lastSyncedBlock: finalSyncedBlock,
       lastSyncedAt: new Date(),
     },
   });
@@ -168,10 +200,20 @@ export async function syncWalletTransfers(
       address: wallet.address,
       transfers: normalized.length,
       fromBlock,
-      syncedTo: maxSyncedBlock,
+      syncedTo: finalSyncedBlock,
     },
     "Wallet ingestion completed",
   );
+
+  return {
+    walletId: wallet.id,
+    address: wallet.address,
+    fromBlock,
+    toBlock: finalSyncedBlock,
+    latestBlock,
+    transfersProcessed: normalized.length,
+    hasMore: finalSyncedBlock < latestBlock,
+  };
 }
 
 function normalizeTransfers(

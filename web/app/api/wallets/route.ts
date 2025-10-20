@@ -111,12 +111,13 @@ export async function POST(request: Request) {
     });
 
     let ingested = false;
+    let syncResult: Awaited<ReturnType<typeof syncWalletTransfers>> | undefined;
     let ingestionError: string | undefined;
 
     if (parsed.data.ingest !== false) {
       try {
         const logger = createConsoleLogger(`[api/wallets ${address}]`);
-        await syncWalletTransfers(wallet, logger, {
+        syncResult = await syncWalletTransfers(wallet, logger, {
           maxPages: Number(process.env.UI_SYNC_MAX_PAGES ?? "2"),
           lookbackBlocks: Number(process.env.UI_SYNC_LOOKBACK_BLOCKS ?? "1500"),
           skipIfSyncedWithinMs: Number(
@@ -136,6 +137,15 @@ export async function POST(request: Request) {
       chain,
       address,
       ingested,
+      sync: syncResult
+        ? {
+            fromBlock: syncResult.fromBlock,
+            toBlock: syncResult.toBlock,
+            latestBlock: syncResult.latestBlock,
+            transfers: syncResult.transfersProcessed,
+            hasMore: syncResult.hasMore,
+          }
+        : null,
       ...(ingestionError ? { ingestionError } : {}),
     });
   } catch (error) {

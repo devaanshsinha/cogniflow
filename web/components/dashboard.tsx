@@ -504,6 +504,20 @@ export function Dashboard() {
   const showGlobalLoading =
     portfolioState.loading || transfersState.loading;
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    if (showGlobalLoading) {
+      document.body.classList.add("cursor-progress");
+    } else {
+      document.body.classList.remove("cursor-progress");
+    }
+    return () => {
+      document.body.classList.remove("cursor-progress");
+    };
+  }, [showGlobalLoading]);
+
   if (!session) {
     return null;
   }
@@ -592,9 +606,7 @@ export function Dashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {portfolioState.loading ? (
-          <p className="text-sm text-neutral-500">Loading summary…</p>
-        ) : !portfolio ? (
+        {!portfolio ? (
           <p className="text-sm text-neutral-500">
             Enter an address to see portfolio insights.
           </p>

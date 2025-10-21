@@ -82,18 +82,19 @@
 
 ## API Surface (Next.js)
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/healthz` | GET | Pings Supabase with `SELECT 1`; used for readiness checks. |
-| `/api/transfers` | GET | Cursor-paginated transfers for a wallet (`address`, `chain`, `direction`, `limit`, `cursor`). Enriched with USD values + latest price timestamp and sync metadata. |
-| `/api/portfolio` | GET | Aggregated stats: total counts, per-token incoming/outgoing/net amounts, USD totals, and wallet sync metadata. |
-| `/api/search` | GET | Semantic search over transfers; embeds the query, filters by `address`/`chain`, queries pgvector, enriches with USD pricing, sorts by intent (largest, latest, etc.). |
-| `/api/tool/sql` | GET/POST | Exposes allowlisted SQL queries (`topCounterparties`, `netFlowSummary`) with zod validation; used by chat/tooling. |
-| `/api/chat` | POST | Intent router for chat-like requests. Supports: \
-  • semanticSearch → calls `/api/search` internally \
-  • topCounterparties → runs named SQL query \
-  • netFlowSummary → runs named SQL query \
-  Returns structured payload `{ answer, tables, chart|null, sources, debug }`. |
+| Endpoint         | Method   | Description                                                                                                                                                           |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/healthz`   | GET      | Pings Supabase with `SELECT 1`; used for readiness checks.                                                                                                            |
+| `/api/transfers` | GET      | Cursor-paginated transfers for a wallet (`address`, `chain`, `direction`, `limit`, `cursor`). Enriched with USD values + latest price timestamp and sync metadata.    |
+| `/api/portfolio` | GET      | Aggregated stats: total counts, per-token incoming/outgoing/net amounts, USD totals, and wallet sync metadata.                                                        |
+| `/api/search`    | GET      | Semantic search over transfers; embeds the query, filters by `address`/`chain`, queries pgvector, enriches with USD pricing, sorts by intent (largest, latest, etc.). |
+| `/api/tool/sql`  | GET/POST | Exposes allowlisted SQL queries (`topCounterparties`, `netFlowSummary`) with zod validation; used by chat/tooling.                                                    |
+| `/api/chat`      | POST     | Intent router for chat-like requests. Supports: \                                                                                                                     |
+
+• semanticSearch → calls `/api/search` internally \
+ • topCounterparties → runs named SQL query \
+ • netFlowSummary → runs named SQL query \
+ Returns structured payload `{ answer, tables, chart|null, sources, debug }`. |
 
 ## Frontend (Dashboard UX)
 
@@ -120,15 +121,15 @@
 
 Run from repository root (dotenv config required):
 
-| Command | Description |
-|---------|-------------|
-| `npm run start -w worker` | Launch ingestion loop (fetch transfers & update cursors). |
-| `npm run start:prices -w worker` | Run CoinGecko price snapshot job. |
-| `npm run start:embeddings -w worker` | Generate embeddings for new transfers. |
-| `npm run dev -w web` | Start Next.js app on `http://localhost:3000`. |
-| `npm run lint -w web` | ESLint check for frontend (passes after latest changes). |
-| `npx prisma studio` | Inspect/edit Supabase tables (uses `DATABASE_URL`). |
-| `npx prisma migrate deploy` | Apply migrations to Supabase (uses `DIRECT_URL`). |
+| Command                              | Description                                               |
+| ------------------------------------ | --------------------------------------------------------- |
+| `npm run start -w worker`            | Launch ingestion loop (fetch transfers & update cursors). |
+| `npm run start:prices -w worker`     | Run CoinGecko price snapshot job.                         |
+| `npm run start:embeddings -w worker` | Generate embeddings for new transfers.                    |
+| `npm run dev -w web`                 | Start Next.js app on `http://localhost:3000`.             |
+| `npm run lint -w web`                | ESLint check for frontend (passes after latest changes).  |
+| `npx prisma studio`                  | Inspect/edit Supabase tables (uses `DATABASE_URL`).       |
+| `npx prisma migrate deploy`          | Apply migrations to Supabase (uses `DIRECT_URL`).         |
 
 ## Environment Variables (see `.env.example`)
 
@@ -215,7 +216,7 @@ Run from repository root (dotenv config required):
 - **web/components/dashboard.tsx** – entire dashboard UI (address form, cards, tables, search).
 - **web/components/ui/** – reusable shadcn-style components.
 - **web/app/signin/page.tsx, web/app/signup/page.tsx** – standalone authentication views.
- - **Deployment / Cron** – schedule Vercel Cron (or external) to hit `/api/ingest`, `/api/prices`, `/api/embeddings` with the shared secret; follow up with UI-driven on-demand ingestion.
+- **Deployment / Cron** – schedule Vercel Cron (or external) to hit `/api/ingest`, `/api/prices`, `/api/embeddings` with the shared secret; follow up with UI-driven on-demand ingestion.
 
 ---
 
